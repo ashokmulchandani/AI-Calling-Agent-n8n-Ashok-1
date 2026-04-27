@@ -1,0 +1,151 @@
+{
+  "name": "05 - Pinecone Vector Sync Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vector-sync",
+        "options": {}
+      },
+      "id": "webhook-vector-sync",
+      "name": "Vector Sync Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "vector-sync-trigger"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare vector data for Pinecone upsert\nconst inputData = $input.first().json;\n\n// Validate that we have embedding data\nif (!inputData.embedding || !inputData.embedding.vector) {\n  throw new Error('No embedding vector provided');\n}\n\n// Prepare metadata (Pinecone has limits on metadata size)\nconst metadata = {\n  // Core identifiers\n  call_id: inputData.call_id,\n  \n  // Participant info\n  caller_name: inputData.metadata?.caller_name || 'Unknown',\n  agent_name: inputData.metadata?.agent_name || 'Unknown',\n  caller_number_hash: inputData.metadata?.caller_number ? \n    Buffer.from(inputData.metadata.caller_number).toString('base64').substring(0, 20) : null,\n  \n  // Timing\n  call_date: inputData.metadata?.started_at ? \n    new Date(inputData.metadata.started_at).toISOString().split('T')[0] : null,\n  duration_minutes: Math.ceil((inputData.metadata?.duration_seconds || 0) / 60),\n  \n  // Analysis results\n  summary: (inputData.analysis?.summary || '').substring(0, 500), // Limit size\n  customer_intent: inputData.analysis?.customer_intent || 'Unknown',\n  resolution_status: inputData.analysis?.resolution_status || 'unknown',\n  sentiment: inputData.analysis?.sentiment?.label || 'neutral',\n  sentiment_score: inputData.analysis?.sentiment?.confidence || 0,\n  \n  // Topics (as comma-separated for filtering)\n  topics: (inputData.analysis?.topics || []).slice(0, 10).join(','),\n  \n  // Entities\n  entities: (inputData.analysis?.entities || []).slice(0, 10).join(','),\n  \n  // Direction\n  call_direction: inputData.metadata?.direction || 'inbound',\n  \n  // Integration references\n  hubspot_contact_id: inputData.integrations?.hubspot_contact_id || null,\n  \n  // Processing info\n  indexed_at: new Date().toISOString()\n};\n\n// Pinecone upsert format\nconst pineconePayload = {\n  vectors: [\n    {\n      id: `call_${inputData.call_id}`,\n      values: inputData.embedding.vector,\n      metadata: metadata\n    }\n  ],\n  namespace: 'call_transcripts'\n};\n\nreturn { json: pineconePayload };"
+      },
+      "id": "prepare-vector-data",
+      "name": "Prepare Vector Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $env.PINECONE_INDEX }}-{{ $env.PINECONE_PROJECT }}.svc.{{ $env.PINECONE_ENVIRONMENT }}.pinecone.io/vectors/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "upsert-pinecone",
+      "name": "Upsert to Pinecone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pinecone-api-key",
+          "name": "Pinecone API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.upsertedCount || 0 }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-upsert-success",
+      "name": "Upsert Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return success response\nconst inputData = $('Vector Sync Trigger').first().json;\nconst pineconeResponse = $('Upsert to Pinecone').first().json;\n\nreturn {\n  json: {\n    status: 'success',\n    call_id: inputData.call_id,\n    vector_id: `call_${inputData.call_id}`,\n    namespace: 'call_transcripts',\n    upserted_count: pineconeResponse.upsertedCount || 1,\n    indexed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "vector-success",
+      "name": "Vector Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle Pinecone error\nconst error = $input.first().json;\nconst inputData = $('Vector Sync Trigger').first().json;\n\nreturn {\n  json: {\n    status: 'error',\n    call_id: inputData.call_id,\n    error_message: error.message || 'Pinecone upsert failed',\n    retry_eligible: true,\n    failed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "vector-error",
+      "name": "Vector Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Vector Sync Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Vector Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vector Data": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Pinecone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Pinecone": {
+      "main": [
+        [
+          {
+            "node": "Upsert Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Success?": {
+      "main": [
+        [
+          {
+            "node": "Vector Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vector Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

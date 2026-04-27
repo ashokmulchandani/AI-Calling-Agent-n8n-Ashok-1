@@ -1,0 +1,229 @@
+{
+  "name": "06 - Error Handler Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "error-handler",
+        "options": {}
+      },
+      "id": "webhook-error",
+      "name": "Error Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "error-handler-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse and enrich error data\nconst errorData = $input.first().json;\n\nconst enrichedError = {\n  // Error identification\n  error_id: `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  \n  // Source information\n  source_workflow: errorData.workflow_name || 'unknown',\n  source_node: errorData.node_name || 'unknown',\n  call_id: errorData.call_id || null,\n  \n  // Error details\n  error_type: errorData.error_type || 'unknown',\n  error_message: errorData.error_message || 'No message provided',\n  error_stack: errorData.error_stack || null,\n  status_code: errorData.status_code || null,\n  \n  // Retry information\n  retry_count: errorData.retry_count || 0,\n  max_retries: 3,\n  retry_eligible: errorData.retry_eligible !== false,\n  \n  // Context\n  input_data: errorData.input_data || null,\n  \n  // Timestamps\n  occurred_at: errorData.occurred_at || new Date().toISOString(),\n  processed_at: new Date().toISOString(),\n  \n  // Severity classification\n  severity: classifySeverity(errorData)\n};\n\nfunction classifySeverity(err) {\n  // Critical: payment, data loss, security\n  if (err.error_message?.includes('payment') || \n      err.error_message?.includes('security') ||\n      err.error_message?.includes('auth')) {\n    return 'critical';\n  }\n  // High: processing failures, API errors\n  if (err.status_code >= 500 || \n      err.error_type === 'processing_failed') {\n    return 'high';\n  }\n  // Medium: retryable errors\n  if (err.status_code >= 400 && err.status_code < 500) {\n    return 'medium';\n  }\n  // Low: everything else\n  return 'low';\n}\n\nreturn { json: enrichedError };"
+      },
+      "id": "enrich-error",
+      "name": "Enrich Error Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "should-retry",
+      "name": "Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate retry delay with exponential backoff\nconst errorData = $input.first().json;\nconst retryCount = errorData.retry_count + 1;\n\n// Exponential backoff: 2^retryCount * 1000ms (2s, 4s, 8s)\nconst delayMs = Math.pow(2, retryCount) * 1000;\n\n// Prepare retry payload\nconst retryPayload = {\n  ...errorData.input_data,\n  _retry_metadata: {\n    retry_count: retryCount,\n    original_error_id: errorData.error_id,\n    retry_at: new Date(Date.now() + delayMs).toISOString()\n  }\n};\n\n// Wait for backoff delay\nawait new Promise(resolve => setTimeout(resolve, delayMs));\n\nreturn { \n  json: {\n    retry_payload: retryPayload,\n    source_workflow: errorData.source_workflow,\n    delay_applied_ms: delayMs\n  }\n};"
+      },
+      "id": "prepare-retry",
+      "name": "Prepare Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.N8N_WEBHOOK_BASE }}/webhook/{{ $json.source_workflow === '02 - AI Processing Workflow' ? 'process-call' : $json.source_workflow === '03 - CRM Sync Workflow' ? 'crm-sync' : $json.source_workflow === '04 - Avoma Sync Workflow' ? 'avoma-sync' : 'vector-sync' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.retry_payload) }}"
+      },
+      "id": "retry-workflow",
+      "name": "Retry Original Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "fileName": "=dlq/{{ new Date().toISOString().split('T')[0] }}/{{ $json.error_id }}.json",
+        "binaryData": false,
+        "fileContent": "={{ JSON.stringify($json, null, 2) }}"
+      },
+      "id": "save-to-dlq",
+      "name": "Save to DLQ (S3)",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "=:rotating_light: **Error Alert**\n\n**Error ID:** `{{ $('Enrich Error Data').item.json.error_id }}`\n**Severity:** {{ $('Enrich Error Data').item.json.severity.toUpperCase() }}\n**Workflow:** {{ $('Enrich Error Data').item.json.source_workflow }}\n**Node:** {{ $('Enrich Error Data').item.json.source_node }}\n**Call ID:** {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n**Error:** {{ $('Enrich Error Data').item.json.error_message }}\n\n**Status:** Moved to Dead Letter Queue\n**Retries Exhausted:** {{ $('Enrich Error Data').item.json.retry_count }}/{{ $('Enrich Error Data').item.json.max_retries }}\n\n<{{ $env.N8N_BASE_URL }}/workflow/{{ $workflow.id }}/executions|View in N8N>",
+        "channel": "={{ $env.SLACK_CHANNEL_ALERTS }}"
+      },
+      "id": "alert-slack",
+      "name": "Alert Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Enrich Error Data').item.json.severity }}",
+              "operation": "equals",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "id": "is-critical",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "content": "=:fire: **CRITICAL ERROR - IMMEDIATE ATTENTION REQUIRED** :fire:\n\n**Error ID:** `{{ $('Enrich Error Data').item.json.error_id }}`\n**Workflow:** {{ $('Enrich Error Data').item.json.source_workflow }}\n**Call ID:** {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n**Error:** {{ $('Enrich Error Data').item.json.error_message }}\n\n<!channel> Please investigate immediately.",
+        "channel": "={{ $env.SLACK_CHANNEL_ONCALL }}"
+      },
+      "id": "page-oncall",
+      "name": "Page On-Call",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Webhook": {
+      "main": [
+        [
+          {
+            "node": "Enrich Error Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Error Data": {
+      "main": [
+        [
+          {
+            "node": "Should Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Retry?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save to DLQ (S3)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Retry": {
+      "main": [
+        [
+          {
+            "node": "Retry Original Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to DLQ (S3)": {
+      "main": [
+        [
+          {
+            "node": "Alert Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Slack": {
+      "main": [
+        [
+          {
+            "node": "Is Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          {
+            "node": "Page On-Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

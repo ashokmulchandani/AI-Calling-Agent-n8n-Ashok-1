@@ -1,0 +1,285 @@
+{
+  "name": "01 - Call Ingest Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aircall-webhook",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-aircall",
+      "name": "Aircall Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "aircall-call-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event }}",
+              "operation": "equals",
+              "value2": "call.ended"
+            }
+          ]
+        }
+      },
+      "id": "filter-call-ended",
+      "name": "Filter Call Ended",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and normalize call metadata from Aircall webhook\nconst webhookData = $input.first().json;\n\nconst callData = {\n  // Call identifiers\n  call_id: webhookData.data?.id || webhookData.call_id,\n  external_id: `aircall_${webhookData.data?.id}`,\n  \n  // Timestamps\n  started_at: webhookData.data?.started_at,\n  ended_at: webhookData.data?.answered_at ? \n    new Date(webhookData.data.answered_at * 1000 + (webhookData.data.duration * 1000)).toISOString() :\n    new Date().toISOString(),\n  duration_seconds: webhookData.data?.duration || 0,\n  \n  // Participants\n  caller_number: webhookData.data?.raw_digits || webhookData.data?.number?.digits,
+  caller_name: webhookData.data?.contact?.first_name ? \n    `${webhookData.data.contact.first_name} ${webhookData.data.contact.last_name || ''}`.trim() :\n    'Unknown Caller',\n  agent_id: webhookData.data?.user?.id,\n  agent_name: webhookData.data?.user?.name,\n  agent_email: webhookData.data?.user?.email,\n  \n  // Call details\n  direction: webhookData.data?.direction || 'inbound',\n  call_type: webhookData.data?.call_type || 'voice',\n  status: webhookData.data?.status || 'done',\n  \n  // Recording info\n  recording_url: webhookData.data?.recording,\n  has_recording: !!webhookData.data?.recording,\n  \n  // HubSpot mapping\n  hubspot_contact_id: webhookData.data?.contact?.hubspot_id || null,\n  \n  // Processing metadata\n  processed_at: new Date().toISOString(),\n  workflow_version: '1.0.0',\n  source: 'aircall'\n};\n\nreturn { json: callData };"
+      },
+      "id": "extract-metadata",
+      "name": "Extract Call Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_recording }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-recording",
+      "name": "Has Recording?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.recording_url }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-recording",
+      "name": "Download Recording",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/audio.wav",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-s3",
+      "name": "Upload to S3",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/metadata.json",
+        "binaryData": false,
+        "fileContent": "={{ JSON.stringify($('Extract Call Metadata').item.json, null, 2) }}"
+      },
+      "id": "save-metadata-s3",
+      "name": "Save Metadata to S3",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.STEP_FUNCTIONS_ENDPOINT }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "awsAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"stateMachineArn\": \"{{ $env.PROCESSING_STATE_MACHINE_ARN }}\",\n  \"input\": {{ JSON.stringify({\n    call_id: $('Extract Call Metadata').item.json.call_id,\n    s3_audio_path: `s3://${$env.S3_RAW_AUDIO_BUCKET}/recordings/${$('Extract Call Metadata').item.json.call_id}/audio.wav`,\n    s3_metadata_path: `s3://${$env.S3_RAW_AUDIO_BUCKET}/recordings/${$('Extract Call Metadata').item.json.call_id}/metadata.json`,\n    metadata: $('Extract Call Metadata').item.json\n  }) }}\n}"
+      },
+      "id": "trigger-step-functions",
+      "name": "Trigger Step Functions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 200],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "=## Call Ingested Successfully\n\n**Call ID:** {{ $('Extract Call Metadata').item.json.call_id }}\n**Caller:** {{ $('Extract Call Metadata').item.json.caller_name }}\n**Agent:** {{ $('Extract Call Metadata').item.json.agent_name }}\n**Duration:** {{ Math.floor($('Extract Call Metadata').item.json.duration_seconds / 60) }}m {{ $('Extract Call Metadata').item.json.duration_seconds % 60 }}s\n\nProcessing pipeline triggered.",
+        "channel": "={{ $env.SLACK_CHANNEL_CALLS }}"
+      },
+      "id": "notify-slack",
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1850, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log calls without recordings for monitoring\nconst callData = $input.first().json;\n\nconsole.log(`Call ${callData.call_id} completed without recording`);\n\nreturn {\n  json: {\n    status: 'no_recording',\n    call_id: callData.call_id,\n    reason: 'Call completed but no recording available',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "log-no-recording",
+      "name": "Log No Recording",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Aircall Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter Call Ended",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Call Ended": {
+      "main": [
+        [
+          {
+            "node": "Extract Call Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Call Metadata": {
+      "main": [
+        [
+          {
+            "node": "Has Recording?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Recording?": {
+      "main": [
+        [
+          {
+            "node": "Download Recording",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log No Recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Recording": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to S3": {
+      "main": [
+        [
+          {
+            "node": "Save Metadata to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Metadata to S3": {
+      "main": [
+        [
+          {
+            "node": "Trigger Step Functions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Step Functions": {
+      "main": [
+        [
+          {
+            "node": "Notify Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "call-center",
+      "id": "tag-call-center"
+    },
+    {
+      "name": "ingest",
+      "id": "tag-ingest"
+    }
+  ]
+}

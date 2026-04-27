@@ -1,0 +1,372 @@
+{
+  "name": "03 - CRM Sync Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-sync",
+        "options": {}
+      },
+      "id": "webhook-crm-sync",
+      "name": "CRM Sync Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "crm-sync-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "bucketName": "={{ $json.s3_path.split('/')[2] }}",
+        "fileKey": "={{ $json.s3_path.split('/').slice(3).join('/') }}"
+      },
+      "id": "download-analysis",
+      "name": "Download Full Analysis",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse the downloaded analysis JSON\nconst binaryData = $input.first().binary.data;\nconst jsonString = Buffer.from(binaryData.data, 'base64').toString('utf-8');\nconst analysisData = JSON.parse(jsonString);\n\nreturn { json: analysisData };"
+      },
+      "id": "parse-analysis",
+      "name": "Parse Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "search",
+        "filterGroups": [
+          {
+            "filters": [
+              {
+                "propertyName": "phone",
+                "operator": "CONTAINS_TOKEN",
+                "value": "={{ $json.metadata.caller_number }}"
+              }
+            ]
+          }
+        ],
+        "additionalFields": {}
+      },
+      "id": "search-hubspot-contact",
+      "name": "Search HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot-credentials",
+          "name": "HubSpot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "contact-exists",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "create",
+        "additionalFields": {
+          "phone": "={{ $('Parse Analysis').item.json.metadata.caller_number }}",
+          "firstname": "={{ $('Parse Analysis').item.json.metadata.caller_name.split(' ')[0] || 'Unknown' }}",
+          "lastname": "={{ $('Parse Analysis').item.json.metadata.caller_name.split(' ').slice(1).join(' ') || 'Caller' }}"
+        }
+      },
+      "id": "create-hubspot-contact",
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1250, 450],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot-credentials",
+          "name": "HubSpot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Get the contact ID from either search result or newly created contact\nconst searchResult = $('Search HubSpot Contact').first().json;\nconst analysisData = $('Parse Analysis').first().json;\n\nlet contactId;\nif (searchResult.total > 0) {\n  contactId = searchResult.results[0].id;\n} else {\n  // This branch handles newly created contacts\n  const createResult = $('Create HubSpot Contact').first();\n  contactId = createResult?.json?.id || null;\n}\n\nreturn {\n  json: {\n    contact_id: contactId,\n    analysis: analysisData\n  }\n};"
+      },
+      "id": "get-contact-id",
+      "name": "Get Contact ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format call notes for HubSpot engagement\nconst data = $input.first().json;\nconst analysis = data.analysis;\n\nconst noteBody = `\n## Call Summary\n${analysis.analysis.summary}\n\n## Customer Intent\n${analysis.analysis.customer_intent}\n\n## Resolution Status\n**${analysis.analysis.resolution_status.toUpperCase()}**\n\n## Sentiment\n${analysis.analysis.sentiment.label} (Confidence: ${analysis.analysis.sentiment.confidence}%)\n\n## Topics Discussed\n${analysis.analysis.topics.map(t => `- ${t}`).join('\\n')}\n\n## Action Items\n${analysis.analysis.action_items.length > 0 ? analysis.analysis.action_items.map(a => `- [ ] ${a}`).join('\\n') : 'No action items'}\n\n## Entities Mentioned\n${analysis.analysis.entities.map(e => `- ${e}`).join('\\n') || 'None identified'}\n\n---\n**Call Details**\n- Duration: ${Math.floor(analysis.transcript.duration / 60)}m ${Math.round(analysis.transcript.duration % 60)}s\n- Agent: ${analysis.metadata.agent_name || 'Unknown'}\n- Call ID: ${analysis.call_id}\n- Processed: ${analysis.processing.analyzed_at}\n`;\n\nreturn {\n  json: {\n    contact_id: data.contact_id,\n    note_body: noteBody,\n    call_id: analysis.call_id,\n    timestamp: analysis.metadata.ended_at || new Date().toISOString()\n  }\n};"
+      },
+      "id": "format-note",
+      "name": "Format Note for HubSpot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "NOTE",
+        "additionalFields": {
+          "associations": {
+            "associatedContacts": ["={{ $json.contact_id }}"]
+          },
+          "metadata": {
+            "body": "={{ $json.note_body }}"
+          }
+        }
+      },
+      "id": "create-hubspot-note",
+      "name": "Create HubSpot Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [1850, 300],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot-credentials",
+          "name": "HubSpot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Parse Analysis').item.json.analysis.resolution_status }}",
+              "operation": "equals",
+              "value2": "unresolved"
+            }
+          ]
+        }
+      },
+      "id": "check-follow-up",
+      "name": "Needs Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "subject": "=Follow-up: {{ $('Parse Analysis').item.json.analysis.customer_intent }}",
+          "body": "=Action items from call {{ $('Format Note for HubSpot').item.json.call_id }}:\n\n{{ $('Parse Analysis').item.json.analysis.action_items.join('\\n- ') }}",
+          "status": "NOT_STARTED",
+          "priority": "HIGH",
+          "associations": {
+            "associatedContacts": ["={{ $('Get Contact ID').item.json.contact_id }}"]
+          }
+        }
+      },
+      "id": "create-follow-up-task",
+      "name": "Create Follow-up Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [2250, 200],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot-credentials",
+          "name": "HubSpot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "=## CRM Sync Complete\n\n**Call ID:** {{ $('Format Note for HubSpot').item.json.call_id }}\n**Contact:** {{ $('Get Contact ID').item.json.contact_id }}\n**Status:** {{ $('Parse Analysis').item.json.analysis.resolution_status }}\n\n:white_check_mark: HubSpot note created\n{{ $('Parse Analysis').item.json.analysis.resolution_status === 'unresolved' ? ':warning: Follow-up task created' : '' }}",
+        "channel": "={{ $env.SLACK_CHANNEL_CALLS }}"
+      },
+      "id": "notify-complete",
+      "name": "Notify Complete",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [2450, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "CRM Sync Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download Full Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Full Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Analysis": {
+      "main": [
+        [
+          {
+            "node": "Search HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Contact ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Get Contact ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact ID": {
+      "main": [
+        [
+          {
+            "node": "Format Note for HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Note for HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Note": {
+      "main": [
+        [
+          {
+            "node": "Needs Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Create Follow-up Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Follow-up Task": {
+      "main": [
+        [
+          {
+            "node": "Notify Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "call-center",
+      "id": "tag-call-center"
+    },
+    {
+      "name": "crm-sync",
+      "id": "tag-crm-sync"
+    }
+  ]
+}
