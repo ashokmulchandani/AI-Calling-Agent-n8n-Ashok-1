@@ -3,3 +3,13 @@ __MACOSX/
 *.env
 node_modules/
 .vscode/
+
+# AWS credentials
+.aws/
+credentials
+*.pem
+*.key
+
+# Secrets
+*.secret
+*.credentials
