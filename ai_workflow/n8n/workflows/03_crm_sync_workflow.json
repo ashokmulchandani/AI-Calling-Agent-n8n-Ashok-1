@@ -203,18 +203,22 @@
     },
     {
       "parameters": {
-        "content": "=## CRM Sync Complete\n\n**Call ID:** {{ $('Format Note for HubSpot').item.json.call_id }}\n**Contact:** {{ $('Get Contact ID').item.json.contact_id }}\n**Status:** {{ $('Parse Analysis').item.json.analysis.resolution_status }}\n\n:white_check_mark: HubSpot note created\n{{ $('Parse Analysis').item.json.analysis.resolution_status === 'unresolved' ? ':warning: Follow-up task created' : '' }}",
-        "channel": "={{ $env.SLACK_CHANNEL_CALLS }}"
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=✅ *CRM Sync Complete*\n\n*Call ID:* {{ $('Format Note for HubSpot').item.json.call_id }}\n*Contact:* {{ $('Get Contact ID').item.json.contact_id }}\n*Status:* {{ $('Parse Analysis').item.json.analysis.resolution_status }}\n\n✅ HubSpot note created\n{{ $('Parse Analysis').item.json.analysis.resolution_status === 'unresolved' ? '⚠️ Follow-up task created' : '' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
       },
       "id": "notify-complete",
       "name": "Notify Complete",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
       "position": [2450, 300],
       "credentials": {
-        "slackApi": {
-          "id": "slack-credentials",
-          "name": "Slack Credentials"
+        "telegramApi": {
+          "id": "telegram-credentials",
+          "name": "Telegram Credentials"
         }
       }
     }

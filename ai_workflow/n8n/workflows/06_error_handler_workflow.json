@@ -86,18 +86,22 @@
     },
     {
       "parameters": {
-        "content": "=:rotating_light: **Error Alert**\n\n**Error ID:** `{{ $('Enrich Error Data').item.json.error_id }}`\n**Severity:** {{ $('Enrich Error Data').item.json.severity.toUpperCase() }}\n**Workflow:** {{ $('Enrich Error Data').item.json.source_workflow }}\n**Node:** {{ $('Enrich Error Data').item.json.source_node }}\n**Call ID:** {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n**Error:** {{ $('Enrich Error Data').item.json.error_message }}\n\n**Status:** Moved to Dead Letter Queue\n**Retries Exhausted:** {{ $('Enrich Error Data').item.json.retry_count }}/{{ $('Enrich Error Data').item.json.max_retries }}\n\n<{{ $env.N8N_BASE_URL }}/workflow/{{ $workflow.id }}/executions|View in N8N>",
-        "channel": "={{ $env.SLACK_CHANNEL_ALERTS }}"
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🚨 *Error Alert*\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Severity:* {{ $('Enrich Error Data').item.json.severity.toUpperCase() }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Node:* {{ $('Enrich Error Data').item.json.source_node }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\n*Status:* Moved to Dead Letter Queue\n*Retries Exhausted:* {{ $('Enrich Error Data').item.json.retry_count }}/{{ $('Enrich Error Data').item.json.max_retries }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
       },
-      "id": "alert-slack",
-      "name": "Alert Slack",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2,
+      "id": "alert-telegram",
+      "name": "Alert Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
       "position": [1050, 400],
       "credentials": {
-        "slackApi": {
-          "id": "slack-credentials",
-          "name": "Slack Credentials"
+        "telegramApi": {
+          "id": "telegram-credentials",
+          "name": "Telegram Credentials"
         }
       }
     },
@@ -121,18 +125,22 @@
     },
     {
       "parameters": {
-        "content": "=:fire: **CRITICAL ERROR - IMMEDIATE ATTENTION REQUIRED** :fire:\n\n**Error ID:** `{{ $('Enrich Error Data').item.json.error_id }}`\n**Workflow:** {{ $('Enrich Error Data').item.json.source_workflow }}\n**Call ID:** {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n**Error:** {{ $('Enrich Error Data').item.json.error_message }}\n\n<!channel> Please investigate immediately.",
-        "channel": "={{ $env.SLACK_CHANNEL_ONCALL }}"
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🔥 *CRITICAL ERROR - IMMEDIATE ATTENTION REQUIRED* 🔥\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\nPlease investigate immediately.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
       },
       "id": "page-oncall",
       "name": "Page On-Call",
-      "type": "n8n-nodes-base.slack",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
       "position": [1450, 300],
       "credentials": {
-        "slackApi": {
-          "id": "slack-credentials",
-          "name": "Slack Credentials"
+        "telegramApi": {
+          "id": "telegram-credentials",
+          "name": "Telegram Credentials"
         }
       }
     }
@@ -193,14 +201,14 @@
       "main": [
         [
           {
-            "node": "Alert Slack",
+            "node": "Alert Telegram",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Alert Slack": {
+    "Alert Telegram": {
       "main": [
         [
           {
