@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.PINECONE_HOST }}/vectors/upsert",
+        "url": "https://call-transcripts-q2z77bi.svc.aped-4627-b74a.pinecone.io/vectors/upsert",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

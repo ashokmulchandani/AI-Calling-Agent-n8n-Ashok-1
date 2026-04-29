@@ -86,7 +86,7 @@
     {
       "parameters": {
         "operation": "upload",
-        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/audio.wav",
         "binaryPropertyName": "data"
       },
@@ -105,7 +105,7 @@
     {
       "parameters": {
         "operation": "write",
-        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/metadata.json",
         "binaryData": false,
         "fileContent": "={{ JSON.stringify($('Extract Call Metadata').item.json, null, 2) }}"
@@ -124,29 +124,21 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.STEP_FUNCTIONS_ENDPOINT }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "awsAuth",
+        "url": "=https://aiamfspr.app.n8n.cloud/webhook/process-call",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"stateMachineArn\": \"{{ $env.PROCESSING_STATE_MACHINE_ARN }}\",\n  \"input\": {{ JSON.stringify({\n    call_id: $('Extract Call Metadata').item.json.call_id,\n    s3_audio_path: `s3://${$env.S3_RAW_AUDIO_BUCKET}/recordings/${$('Extract Call Metadata').item.json.call_id}/audio.wav`,\n    s3_metadata_path: `s3://${$env.S3_RAW_AUDIO_BUCKET}/recordings/${$('Extract Call Metadata').item.json.call_id}/metadata.json`,\n    metadata: $('Extract Call Metadata').item.json\n  }) }}\n}"
+        "jsonBody": "={{ JSON.stringify({\n    call_id: $('Extract Call Metadata').item.json.call_id,\n    bucket: 'callcenter-raw-audio-prod-1-ashok',\n    audio_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/audio.wav`,\n    metadata_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/metadata.json`,\n    metadata: $('Extract Call Metadata').item.json\n  }) }}"
       },
       "id": "trigger-step-functions",
-      "name": "Trigger Step Functions",
+      "name": "Trigger AI Processing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1650, 200],
-      "credentials": {
-        "aws": {
-          "id": "aws-credentials",
-          "name": "AWS Credentials"
-        }
-      }
+      "position": [1650, 200]
     },
     {
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "chatId": "1414560298",
         "text": "=✅ *Call Ingested Successfully*\n\n*Call ID:* {{ $('Extract Call Metadata').item.json.call_id }}\n*Caller:* {{ $('Extract Call Metadata').item.json.caller_name }}\n*Agent:* {{ $('Extract Call Metadata').item.json.agent_name }}\n*Duration:* {{ Math.floor($('Extract Call Metadata').item.json.duration_seconds / 60) }}m {{ $('Extract Call Metadata').item.json.duration_seconds % 60 }}s\n\nProcessing pipeline triggered.",
         "additionalFields": {
           "parse_mode": "Markdown"

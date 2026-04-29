@@ -53,7 +53,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.N8N_WEBHOOK_BASE }}/webhook/{{ $json.source_workflow === '02 - AI Processing Workflow' ? 'process-call' : $json.source_workflow === '03 - CRM Sync Workflow' ? 'crm-sync' : $json.source_workflow === '04 - Avoma Sync Workflow' ? 'avoma-sync' : 'vector-sync' }}",
+        "url": "=https://aiamfspr.app.n8n.cloud/webhook/{{ $json.source_workflow === '02 - AI Processing Workflow' ? 'process-call' : $json.source_workflow === '03 - CRM Sync Workflow' ? 'crm-sync' : $json.source_workflow === '04 - Avoma Sync Workflow' ? 'avoma-sync' : 'vector-sync' }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.retry_payload) }}"
@@ -67,7 +67,7 @@
     {
       "parameters": {
         "operation": "write",
-        "bucketName": "={{ $env.S3_RAW_AUDIO_BUCKET }}",
+        "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=dlq/{{ new Date().toISOString().split('T')[0] }}/{{ $json.error_id }}.json",
         "binaryData": false,
         "fileContent": "={{ JSON.stringify($json, null, 2) }}"
@@ -87,7 +87,7 @@
     {
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "chatId": "1414560298",
         "text": "=🚨 *Error Alert*\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Severity:* {{ $('Enrich Error Data').item.json.severity.toUpperCase() }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Node:* {{ $('Enrich Error Data').item.json.source_node }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\n*Status:* Moved to Dead Letter Queue\n*Retries Exhausted:* {{ $('Enrich Error Data').item.json.retry_count }}/{{ $('Enrich Error Data').item.json.max_retries }}",
         "additionalFields": {
           "parse_mode": "Markdown"
@@ -126,7 +126,7 @@
     {
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "chatId": "1414560298",
         "text": "=🔥 *CRITICAL ERROR - IMMEDIATE ATTENTION REQUIRED* 🔥\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\nPlease investigate immediately.",
         "additionalFields": {
           "parse_mode": "Markdown"

@@ -204,7 +204,7 @@
     {
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "chatId": "1414560298",
         "text": "=✅ *CRM Sync Complete*\n\n*Call ID:* {{ $('Format Note for HubSpot').item.json.call_id }}\n*Contact:* {{ $('Get Contact ID').item.json.contact_id }}\n*Status:* {{ $('Parse Analysis').item.json.analysis.resolution_status }}\n\n✅ HubSpot note created\n{{ $('Parse Analysis').item.json.analysis.resolution_status === 'unresolved' ? '⚠️ Follow-up task created' : '' }}",
         "additionalFields": {
           "parse_mode": "Markdown"

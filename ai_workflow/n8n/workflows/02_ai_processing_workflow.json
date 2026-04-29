@@ -34,7 +34,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.AZURE_OPENAI_ENDPOINT }}/openai/deployments/{{ $env.WHISPER_DEPLOYMENT }}/audio/transcriptions?api-version=2024-02-01",
+        "url": "https://testashok1.openai.azure.com/openai/deployments/call-Centre-audio-whisper-1-ashok/audio/transcriptions?api-version=2024-02-01",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -86,7 +86,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.AZURE_OPENAI_ENDPOINT }}/openai/deployments/{{ $env.GPT4_DEPLOYMENT }}/chat/completions?api-version=2024-02-01",
+        "url": "https://testashok1.openai.azure.com/openai/deployments/Test-Ashok-1-gpt-4o/chat/completions?api-version=2024-02-01",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -117,7 +117,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.AZURE_OPENAI_ENDPOINT }}/openai/deployments/{{ $env.EMBEDDING_DEPLOYMENT }}/embeddings?api-version=2024-02-01",
+        "url": "https://testashok1.openai.azure.com/openai/deployments/Call-Centre-text-embedding-ada-002-ashok-1/embeddings?api-version=2024-02-01",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -149,7 +149,7 @@
     {
       "parameters": {
         "operation": "write",
-        "bucketName": "={{ $env.S3_PROCESSED_BUCKET }}",
+        "bucketName": "callcenter-processed-transcripts-prod-1-ashok",
         "fileName": "=processed/{{ $json.call_id }}/full_analysis.json",
         "binaryData": false,
         "fileContent": "={{ JSON.stringify($json, null, 2) }}"
@@ -168,10 +168,10 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.N8N_WEBHOOK_BASE }}/webhook/crm-sync",
+        "url": "https://aiamfspr.app.n8n.cloud/webhook/crm-sync",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"call_id\": \"{{ $json.call_id }}\",\n  \"s3_path\": \"s3://{{ $env.S3_PROCESSED_BUCKET }}/processed/{{ $json.call_id }}/full_analysis.json\",\n  \"summary\": {{ JSON.stringify($json.analysis.summary) }},\n  \"sentiment\": {{ JSON.stringify($json.analysis.sentiment) }},\n  \"action_items\": {{ JSON.stringify($json.analysis.action_items) }},\n  \"metadata\": {{ JSON.stringify($json.metadata) }}\n}"
+        "jsonBody": "={\n  \"call_id\": \"{{ $json.call_id }}\",\n  \"s3_path\": \"s3://callcenter-processed-transcripts-prod-1-ashok/processed/{{ $json.call_id }}/full_analysis.json\",\n  \"summary\": {{ JSON.stringify($json.analysis.summary) }},\n  \"sentiment\": {{ JSON.stringify($json.analysis.sentiment) }},\n  \"action_items\": {{ JSON.stringify($json.analysis.action_items) }},\n  \"metadata\": {{ JSON.stringify($json.metadata) }}\n}"
       },
       "id": "trigger-crm-sync",
       "name": "Trigger CRM Sync",
