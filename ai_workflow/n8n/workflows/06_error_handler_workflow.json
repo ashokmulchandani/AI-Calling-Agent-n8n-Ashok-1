@@ -74,7 +74,7 @@
       },
       "id": "save-to-dlq",
       "name": "Save to DLQ (S3)",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [850, 400],
       "credentials": {

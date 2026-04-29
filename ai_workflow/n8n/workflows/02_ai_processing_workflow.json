@@ -22,7 +22,7 @@
       },
       "id": "download-audio-s3",
       "name": "Download Audio from S3",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [450, 300],
       "credentials": {
@@ -156,7 +156,7 @@
       },
       "id": "save-processed-s3",
       "name": "Save to S3 Processed",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [1850, 300],
       "credentials": {

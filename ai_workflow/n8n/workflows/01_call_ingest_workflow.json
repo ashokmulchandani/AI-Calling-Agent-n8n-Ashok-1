@@ -92,7 +92,7 @@
       },
       "id": "upload-s3",
       "name": "Upload to S3",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [1250, 200],
       "credentials": {
@@ -112,7 +112,7 @@
       },
       "id": "save-metadata-s3",
       "name": "Save Metadata to S3",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [1450, 200],
       "credentials": {

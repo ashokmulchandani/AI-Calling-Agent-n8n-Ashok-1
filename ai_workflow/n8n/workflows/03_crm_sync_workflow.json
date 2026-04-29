@@ -22,7 +22,7 @@
       },
       "id": "download-analysis",
       "name": "Download Full Analysis",
-      "type": "n8n-nodes-base.s3",
+      "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [450, 300],
       "credentials": {
