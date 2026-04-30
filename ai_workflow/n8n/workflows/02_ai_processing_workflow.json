@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "operation": "download",
+        "operation": "getObject",
         "bucketName": "={{ $json.bucket }}",
         "fileKey": "={{ $json.audio_key }}"
       },
@@ -148,7 +148,7 @@
     },
     {
       "parameters": {
-        "operation": "write",
+        "operation": "putObject",
         "bucketName": "callcenter-processed-transcripts-prod-1-ashok",
         "fileName": "=processed/{{ $json.call_id }}/full_analysis.json",
         "binaryData": false,

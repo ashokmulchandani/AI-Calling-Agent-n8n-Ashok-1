@@ -66,7 +66,7 @@
     },
     {
       "parameters": {
-        "operation": "write",
+        "operation": "putObject",
         "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=dlq/{{ new Date().toISOString().split('T')[0] }}/{{ $json.error_id }}.json",
         "binaryData": false,

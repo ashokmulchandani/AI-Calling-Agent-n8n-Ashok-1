@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "operation": "download",
+        "operation": "getObject",
         "bucketName": "={{ $json.s3_path.split('/')[2] }}",
         "fileKey": "={{ $json.s3_path.split('/').slice(3).join('/') }}"
       },

@@ -85,7 +85,7 @@
     },
     {
       "parameters": {
-        "operation": "upload",
+        "operation": "putObject",
         "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/audio.wav",
         "binaryPropertyName": "data"
@@ -104,7 +104,7 @@
     },
     {
       "parameters": {
-        "operation": "write",
+        "operation": "putObject",
         "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/metadata.json",
         "binaryData": false,
