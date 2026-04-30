@@ -19,19 +19,27 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.event }}",
-              "operation": "equals",
-              "value2": "call.ended"
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "call.ended",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "filter-call-ended",
       "name": "Filter Call Ended",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [450, 300]
     },
     {
@@ -47,18 +55,27 @@
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.has_recording }}",
-              "value2": true
+              "leftValue": "={{ $json.has_recording }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "check-recording",
       "name": "Has Recording?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [850, 300]
     },
     {

@@ -56,19 +56,27 @@
     {
       "parameters": {
         "conditions": {
-          "number": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.upsertedCount || 0 }}",
-              "operation": "larger",
-              "value2": 0
+              "leftValue": "={{ $json.upsertedCount || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "check-upsert-success",
       "name": "Upsert Success?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [850, 300]
     },
     {

@@ -74,19 +74,27 @@
     {
       "parameters": {
         "conditions": {
-          "number": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.total }}",
-              "operation": "larger",
-              "value2": 0
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "contact-exists",
       "name": "Contact Exists?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [1050, 300]
     },
     {
@@ -160,19 +168,27 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $('Parse Analysis').item.json.analysis.resolution_status }}",
-              "operation": "equals",
-              "value2": "unresolved"
+              "leftValue": "={{ $('Parse Analysis').item.json.analysis.resolution_status }}",
+              "rightValue": "unresolved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "check-follow-up",
       "name": "Needs Follow-up?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [2050, 300]
     },
     {

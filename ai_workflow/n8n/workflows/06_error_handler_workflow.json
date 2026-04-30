@@ -27,18 +27,27 @@
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
-              "value2": true
+              "leftValue": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "should-retry",
       "name": "Should Retry?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [650, 300]
     },
     {
@@ -108,19 +117,27 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $('Enrich Error Data').item.json.severity }}",
-              "operation": "equals",
-              "value2": "critical"
+              "leftValue": "={{ $('Enrich Error Data').item.json.severity }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "is-critical",
       "name": "Is Critical?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [1250, 400]
     },
     {

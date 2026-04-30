@@ -56,19 +56,27 @@
     {
       "parameters": {
         "conditions": {
-          "number": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.statusCode || 200 }}",
-              "operation": "smaller",
-              "value2": 300
+              "leftValue": "={{ $json.statusCode || 200 }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "check-avoma-success",
       "name": "Success?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [850, 300]
     },
     {
