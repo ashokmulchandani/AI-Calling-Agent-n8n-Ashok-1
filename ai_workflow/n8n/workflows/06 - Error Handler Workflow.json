@@ -7,161 +7,165 @@
         "path": "error-handler",
         "options": {}
       },
-      "id": "webhook-error",
+      "id": "24a12b1a-5a9c-4a73-8f36-e4be1fbcb598",
       "name": "Error Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        448,
+        480
+      ],
       "webhookId": "error-handler-webhook"
     },
     {
-      "parameters": {
-        "functionCode": "// Parse and enrich error data\nconst errorData = $input.first().json;\n\nconst enrichedError = {\n  // Error identification\n  error_id: `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  \n  // Source information\n  source_workflow: errorData.workflow_name || 'unknown',\n  source_node: errorData.node_name || 'unknown',\n  call_id: errorData.call_id || null,\n  \n  // Error details\n  error_type: errorData.error_type || 'unknown',\n  error_message: errorData.error_message || 'No message provided',\n  error_stack: errorData.error_stack || null,\n  status_code: errorData.status_code || null,\n  \n  // Retry information\n  retry_count: errorData.retry_count || 0,\n  max_retries: 3,\n  retry_eligible: errorData.retry_eligible !== false,\n  \n  // Context\n  input_data: errorData.input_data || null,\n  \n  // Timestamps\n  occurred_at: errorData.occurred_at || new Date().toISOString(),\n  processed_at: new Date().toISOString(),\n  \n  // Severity classification\n  severity: classifySeverity(errorData)\n};\n\nfunction classifySeverity(err) {\n  // Critical: payment, data loss, security\n  if (err.error_message?.includes('payment') || \n      err.error_message?.includes('security') ||\n      err.error_message?.includes('auth')) {\n    return 'critical';\n  }\n  // High: processing failures, API errors\n  if (err.status_code >= 500 || \n      err.error_type === 'processing_failed') {\n    return 'high';\n  }\n  // Medium: retryable errors\n  if (err.status_code >= 400 && err.status_code < 500) {\n    return 'medium';\n  }\n  // Low: everything else\n  return 'low';\n}\n\nreturn { json: enrichedError };"
-      },
-      "id": "enrich-error",
+      "parameters": {},
+      "id": "4c6b0271-85ea-4f4d-afcb-737e2aa6d0f7",
       "name": "Enrich Error Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        640,
+        480
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
+          "boolean": [
             {
-              "leftValue": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "value1": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
+              "value2": true
             }
-          ],
-          "combinator": "and"
+          ]
         }
       },
-      "id": "should-retry",
+      "id": "be8dbdd6-9349-4cd6-98cd-c38b35eae353",
       "name": "Should Retry?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [650, 300]
+      "typeVersion": 1,
+      "position": [
+        848,
+        480
+      ]
     },
     {
-      "parameters": {
-        "functionCode": "// Calculate retry delay with exponential backoff\nconst errorData = $input.first().json;\nconst retryCount = errorData.retry_count + 1;\n\n// Exponential backoff: 2^retryCount * 1000ms (2s, 4s, 8s)\nconst delayMs = Math.pow(2, retryCount) * 1000;\n\n// Prepare retry payload\nconst retryPayload = {\n  ...errorData.input_data,\n  _retry_metadata: {\n    retry_count: retryCount,\n    original_error_id: errorData.error_id,\n    retry_at: new Date(Date.now() + delayMs).toISOString()\n  }\n};\n\n// Wait for backoff delay\nawait new Promise(resolve => setTimeout(resolve, delayMs));\n\nreturn { \n  json: {\n    retry_payload: retryPayload,\n    source_workflow: errorData.source_workflow,\n    delay_applied_ms: delayMs\n  }\n};"
-      },
-      "id": "prepare-retry",
+      "parameters": {},
+      "id": "2305efd4-8c80-485b-90a3-086d67e4d709",
       "name": "Prepare Retry",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 200]
+      "position": [
+        1040,
+        384
+      ]
     },
     {
       "parameters": {
         "url": "=https://aiamfspr.app.n8n.cloud/webhook/{{ $json.source_workflow === '02 - AI Processing Workflow' ? 'process-call' : $json.source_workflow === '03 - CRM Sync Workflow' ? 'crm-sync' : $json.source_workflow === '04 - Avoma Sync Workflow' ? 'avoma-sync' : 'vector-sync' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.retry_payload) }}"
+        "jsonBody": "={{ JSON.stringify($json.retry_payload) }}",
+        "options": {}
       },
-      "id": "retry-workflow",
+      "id": "b5a3578a-49a1-465b-b8b8-39ea133f83c4",
       "name": "Retry Original Workflow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1050, 200]
+      "position": [
+        1248,
+        384
+      ]
     },
     {
       "parameters": {
-        "operation": "putObject",
-        "bucketName": "callcenter-raw-audio-prod-1-ashok",
-        "fileName": "=dlq/{{ new Date().toISOString().split('T')[0] }}/{{ $json.error_id }}.json",
-        "binaryData": false,
-        "fileContent": "={{ JSON.stringify($json, null, 2) }}"
+        "operation": "putObject"
       },
-      "id": "save-to-dlq",
+      "id": "44ee2aa7-96f1-44a7-b7f4-30c02a7a0fe7",
       "name": "Save to DLQ (S3)",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
-      "position": [850, 400],
+      "position": [
+        1040,
+        592
+      ],
       "credentials": {
         "aws": {
-          "id": "aws-credentials",
-          "name": "AWS Credentials"
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
-        "operation": "sendMessage",
         "chatId": "1414560298",
         "text": "=🚨 *Error Alert*\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Severity:* {{ $('Enrich Error Data').item.json.severity.toUpperCase() }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Node:* {{ $('Enrich Error Data').item.json.source_node }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\n*Status:* Moved to Dead Letter Queue\n*Retries Exhausted:* {{ $('Enrich Error Data').item.json.retry_count }}/{{ $('Enrich Error Data').item.json.max_retries }}",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
       },
-      "id": "alert-telegram",
+      "id": "14c95271-c662-48f5-a238-a221028dd3ed",
       "name": "Alert Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [1050, 400],
+      "position": [
+        1248,
+        592
+      ],
+      "webhookId": "17bbff05-207c-45a4-aec7-a4aed5a3b450",
       "credentials": {
         "telegramApi": {
-          "id": "telegram-credentials",
-          "name": "Telegram Credentials"
+          "id": "vZzbzI1YiyjFFiwz",
+          "name": "Telegram account 3"
         }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
+          "string": [
             {
-              "leftValue": "={{ $('Enrich Error Data').item.json.severity }}",
-              "rightValue": "critical",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
+              "value1": "={{ $('Enrich Error Data').item.json.severity }}",
+              "operation": "equals",
+              "value2": "critical"
             }
-          ],
-          "combinator": "and"
+          ]
         }
       },
-      "id": "is-critical",
+      "id": "06bda124-0c76-4a6b-8dcf-3fcb40692660",
       "name": "Is Critical?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [1250, 400]
+      "typeVersion": 1,
+      "position": [
+        1440,
+        592
+      ]
     },
     {
       "parameters": {
-        "operation": "sendMessage",
         "chatId": "1414560298",
         "text": "=🔥 *CRITICAL ERROR - IMMEDIATE ATTENTION REQUIRED* 🔥\n\n*Error ID:* {{ $('Enrich Error Data').item.json.error_id }}\n*Workflow:* {{ $('Enrich Error Data').item.json.source_workflow }}\n*Call ID:* {{ $('Enrich Error Data').item.json.call_id || 'N/A' }}\n\n*Error:* {{ $('Enrich Error Data').item.json.error_message }}\n\nPlease investigate immediately.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
       },
-      "id": "page-oncall",
+      "id": "02f5773a-af85-4835-a711-458dad73d12f",
       "name": "Page On-Call",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [1450, 300],
+      "position": [
+        1648,
+        480
+      ],
+      "webhookId": "420960ad-56d8-401c-a523-81a48f2de5a0",
       "credentials": {
         "telegramApi": {
-          "id": "telegram-credentials",
-          "name": "Telegram Credentials"
+          "id": "vZzbzI1YiyjFFiwz",
+          "name": "Telegram account 3"
         }
       }
     }
   ],
+  "pinData": {},
   "connections": {
     "Error Webhook": {
       "main": [
@@ -248,7 +252,16 @@
       ]
     }
   },
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
-  }
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "df82f6d3-5c0c-47e7-a212-27b30128c17a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "meXAMnmcpGE2wTy7",
+  "tags": []
 }

@@ -9,11 +9,14 @@
           "rawBody": true
         }
       },
-      "id": "webhook-aircall",
+      "id": "a359bbb9-cdf1-41aa-ba3a-302a45214935",
       "name": "Aircall Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        5120,
+        2192
+      ],
       "webhookId": "aircall-call-events"
     },
     {
@@ -21,43 +24,55 @@
         "conditions": {
           "options": {
             "caseSensitive": true,
-            "leftValue": ""
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
-              "leftValue": "={{ $json.event }}",
+              "leftValue": "={{ $json.body.event }}",
               "rightValue": "call.ended",
               "operator": {
                 "type": "string",
                 "operation": "equals"
-              }
+              },
+              "id": "c79b8bc5-131d-438e-b136-393f373c5ccf"
             }
           ],
-          "combinator": "and"
-        }
+          "combinator": "or"
+        },
+        "options": {}
       },
-      "id": "filter-call-ended",
+      "id": "ff63166d-fd70-477f-99e6-cb5f55544d7e",
       "name": "Filter Call Ended",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [
+        5312,
+        2192
+      ]
     },
     {
       "parameters": {
-        "functionCode": "// Extract and normalize call metadata from Aircall webhook\nconst webhookData = $input.first().json.body || $input.first().json;\n\nconst callData = {\n  // Call identifiers\n  call_id: webhookData.data?.id || webhookData.call_id,\n  external_id: `aircall_${webhookData.data?.id}`,\n  \n  // Timestamps\n  started_at: webhookData.data?.started_at,\n  ended_at: webhookData.data?.answered_at ? \n    new Date(webhookData.data.answered_at * 1000 + (webhookData.data.duration * 1000)).toISOString() :\n    new Date().toISOString(),\n  duration_seconds: webhookData.data?.duration || 0,\n  \n  // Participants\n  caller_number: webhookData.data?.raw_digits || webhookData.data?.number?.digits,\n  caller_name: webhookData.data?.contact?.first_name ? \n    `${webhookData.data.contact.first_name} ${webhookData.data.contact.last_name || ''}`.trim() :\n    'Unknown Caller',\n  agent_id: webhookData.data?.user?.id,\n  agent_name: webhookData.data?.user?.name,\n  agent_email: webhookData.data?.user?.email,\n  \n  // Call details\n  direction: webhookData.data?.direction || 'inbound',\n  call_type: webhookData.data?.call_type || 'voice',\n  status: webhookData.data?.status || 'done',\n  \n  // Recording info\n  recording_url: webhookData.data?.recording,\n  has_recording: !!webhookData.data?.recording,\n  \n  // HubSpot mapping\n  hubspot_contact_id: webhookData.data?.contact?.hubspot_id || null,\n  \n  // Processing metadata\n  processed_at: new Date().toISOString(),\n  workflow_version: '1.0.0',\n  source: 'aircall'\n};\n\nreturn { json: callData };"
+        "jsCode": "const webhookData = $input.first().json.body || $input.first().json;\n\nconst callData = {\n  call_id: webhookData.data?.id || webhookData.call_id,\n  external_id: `aircall_${webhookData.data?.id}`,\n  started_at: webhookData.data?.started_at,\n  ended_at: webhookData.data?.answered_at ? \n    new Date(webhookData.data.answered_at * 1000 + (webhookData.data.duration * 1000)).toISOString() :\n    new Date().toISOString(),\n  duration_seconds: webhookData.data?.duration || 0,\n  caller_number: webhookData.data?.raw_digits || webhookData.data?.number?.digits,\n  caller_name: webhookData.data?.contact?.first_name ? \n    `${webhookData.data.contact.first_name} ${webhookData.data.contact.last_name || ''}`.trim() :\n    'Unknown Caller',\n  agent_id: webhookData.data?.user?.id,\n  agent_name: webhookData.data?.user?.name,\n  agent_email: webhookData.data?.user?.email,\n  direction: webhookData.data?.direction || 'inbound',\n  call_type: webhookData.data?.call_type || 'voice',\n  status: webhookData.data?.status || 'done',\n  recording_url: webhookData.data?.recording,\n  has_recording: !!webhookData.data?.recording,\n  hubspot_contact_id: webhookData.data?.contact?.hubspot_id || null,\n  processed_at: new Date().toISOString(),\n  workflow_version: '1.0.0',\n  source: 'aircall'\n};\n\nreturn [{ json: callData }];\n"
       },
-      "id": "extract-metadata",
+      "id": "2429dd21-5b4e-4d7e-be09-7a8f5f1d1176",
       "name": "Extract Call Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [
+        5552,
+        2192
+      ]
     },
     {
       "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
-            "leftValue": ""
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
@@ -70,22 +85,24 @@
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
-      "id": "check-recording",
+      "id": "254082bb-d9fb-43fe-ac18-047b41b0b773",
       "name": "Has Recording?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [
+        5728,
+        2208
+      ]
     },
     {
       "parameters": {
         "url": "={{ $json.recording_url }}",
         "options": {
           "redirect": {
-            "redirect": {
-              "followRedirects": true
-            }
+            "redirect": {}
           },
           "response": {
             "response": {
@@ -94,96 +111,118 @@
           }
         }
       },
-      "id": "download-recording",
+      "id": "fa368bf1-5baf-4a11-a979-ab30f03b758a",
       "name": "Download Recording",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1050, 200]
+      "position": [
+        5920,
+        2080
+      ]
     },
     {
       "parameters": {
-        "operation": "putObject",
+        "operation": "upload",
         "bucketName": "callcenter-raw-audio-prod-1-ashok",
         "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/audio.wav",
-        "binaryPropertyName": "data"
+        "additionalFields": {}
       },
-      "id": "upload-s3",
+      "id": "fe23c7f4-a8f9-4a83-9bfc-721855eff44c",
       "name": "Upload to S3",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
-      "position": [1250, 200],
+      "position": [
+        6128,
+        2080
+      ],
       "credentials": {
         "aws": {
-          "id": "aws-credentials",
-          "name": "AWS Credentials"
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
-        "operation": "putObject",
+        "operation": "upload",
         "bucketName": "callcenter-raw-audio-prod-1-ashok",
-        "fileName": "=recordings/{{ $('Extract Call Metadata').item.json.call_id }}/metadata.json",
+        "fileName": "==recordings/{{ $('Extract Call Metadata').item.json.call_id }}/metadata.json",
         "binaryData": false,
-        "fileContent": "={{ JSON.stringify($('Extract Call Metadata').item.json, null, 2) }}"
+        "fileContent": "=={{ JSON.stringify($('Extract Call Metadata').item.json, null, 2) }}",
+        "additionalFields": {}
       },
-      "id": "save-metadata-s3",
+      "id": "c9367daf-cfad-4e6f-a123-40ce747bf920",
       "name": "Save Metadata to S3",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
-      "position": [1450, 200],
+      "position": [
+        6320,
+        2080
+      ],
       "credentials": {
         "aws": {
-          "id": "aws-credentials",
-          "name": "AWS Credentials"
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
+        "method": "POST",
         "url": "=https://aiamfspr.app.n8n.cloud/webhook/process-call",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n    call_id: $('Extract Call Metadata').item.json.call_id,\n    bucket: 'callcenter-raw-audio-prod-1-ashok',\n    audio_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/audio.wav`,\n    metadata_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/metadata.json`,\n    metadata: $('Extract Call Metadata').item.json\n  }) }}"
+        "jsonBody": "={{ JSON.stringify({\n    call_id: $('Extract Call Metadata').item.json.call_id,\n    bucket: 'callcenter-raw-audio-prod-1-ashok',\n    audio_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/audio.wav`,\n    metadata_key: `recordings/${$('Extract Call Metadata').item.json.call_id}/metadata.json`,\n    metadata: $('Extract Call Metadata').item.json\n  }) }}",
+        "options": {}
       },
-      "id": "trigger-step-functions",
+      "id": "5b85a215-23d8-4310-97bf-28d2ad1e2b1a",
       "name": "Trigger AI Processing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1650, 200]
+      "position": [
+        6528,
+        2080
+      ]
     },
     {
       "parameters": {
-        "operation": "sendMessage",
         "chatId": "1414560298",
         "text": "=✅ *Call Ingested Successfully*\n\n*Call ID:* {{ $('Extract Call Metadata').item.json.call_id }}\n*Caller:* {{ $('Extract Call Metadata').item.json.caller_name }}\n*Agent:* {{ $('Extract Call Metadata').item.json.agent_name }}\n*Duration:* {{ Math.floor($('Extract Call Metadata').item.json.duration_seconds / 60) }}m {{ $('Extract Call Metadata').item.json.duration_seconds % 60 }}s\n\nProcessing pipeline triggered.",
         "additionalFields": {
           "parse_mode": "Markdown"
         }
       },
-      "id": "notify-telegram",
+      "id": "b85e82cd-124f-42a7-bd10-a0af121c6bde",
       "name": "Notify Telegram",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [1850, 200],
+      "position": [
+        6720,
+        2080
+      ],
+      "webhookId": "ab448eaa-407e-4452-ac23-52a5752ec198",
       "credentials": {
         "telegramApi": {
-          "id": "telegram-credentials",
-          "name": "Telegram Credentials"
+          "id": "vZzbzI1YiyjFFiwz",
+          "name": "Telegram account 3"
         }
       }
     },
     {
       "parameters": {
-        "functionCode": "// Log calls without recordings for monitoring\nconst callData = $input.first().json;\n\nconsole.log(`Call ${callData.call_id} completed without recording`);\n\nreturn {\n  json: {\n    status: 'no_recording',\n    call_id: callData.call_id,\n    reason: 'Call completed but no recording available',\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "const callData = $input.first().json;\n\nreturn [{\n  json: {\n    status: 'no_recording',\n    call_id: callData.call_id,\n    reason: 'Call completed but no recording available',\n    timestamp: new Date().toISOString()\n  }\n}];\n"
       },
-      "id": "log-no-recording",
+      "id": "52372584-f78a-4b50-a3c1-310d82129da8",
       "name": "Log No Recording",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1050, 400]
+      "position": [
+        5920,
+        2288
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
     "Aircall Webhook": {
       "main": [
@@ -262,14 +301,14 @@
       "main": [
         [
           {
-            "node": "Trigger Step Functions",
+            "node": "Trigger AI Processing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Trigger Step Functions": {
+    "Trigger AI Processing": {
       "main": [
         [
           {
@@ -281,17 +320,35 @@
       ]
     }
   },
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
+  "versionId": "55b59b9f-b675-4e96-acc3-30ab49ae565e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "BNZSZAZPfNhOP1BK",
   "tags": [
     {
-      "name": "call-center",
-      "id": "tag-call-center"
+      "updatedAt": "2026-04-27T14:01:46.260Z",
+      "createdAt": "2026-04-27T14:01:46.260Z",
+      "id": "0KeZFhF36Nsor9m8",
+      "name": "ai-processing"
     },
     {
-      "name": "ingest",
-      "id": "tag-ingest"
+      "updatedAt": "2026-04-27T14:01:46.225Z",
+      "createdAt": "2026-04-27T14:01:46.225Z",
+      "id": "qm7fANEcKcfNDv8i",
+      "name": "call-center"
+    },
+    {
+      "updatedAt": "2026-04-27T14:03:24.057Z",
+      "createdAt": "2026-04-27T14:03:24.057Z",
+      "id": "qoJrUzmh9e84FYgf",
+      "name": "ingest"
     }
   ]
 }

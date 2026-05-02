@@ -1,0 +1,218 @@
+{
+  "name": "05 - Pinecone Vector Sync Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vector-sync",
+        "options": {}
+      },
+      "id": "f70bbba1-f1a4-471a-8edf-cae9bd864502",
+      "name": "Vector Sync Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        608
+      ],
+      "webhookId": "vector-sync-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json.body || $input.first().json;\n\nif (!inputData.embedding || !inputData.embedding.vector) {\n  throw new Error('No embedding vector provided');\n}\n\nconst sentimentRaw = inputData.analysis?.sentiment;\nconst sentimentLabel = typeof sentimentRaw === 'object' \n  ? (sentimentRaw.label || sentimentRaw.value || 'neutral')\n  : String(sentimentRaw || 'neutral');\n\nconst sentimentScore = typeof sentimentRaw === 'object'\n  ? (sentimentRaw.confidence || sentimentRaw.score || 0)\n  : 0;\n\nconst metadata = {\n  call_id: String(inputData.call_id),\n  caller_name: inputData.metadata?.caller_name || 'Unknown',\n  agent_name: inputData.metadata?.agent_name || 'Unknown',\n  call_date: inputData.metadata?.started_at ? new Date(inputData.metadata.started_at * 1000).toISOString().split('T')[0] : null,\n  duration_minutes: Math.ceil((inputData.metadata?.duration_seconds || 0) / 60),\n  summary: (inputData.analysis?.summary || '').substring(0, 500),\n  customer_intent: inputData.analysis?.customer_intent || 'Unknown',\n  resolution_status: inputData.analysis?.resolution_status || 'unknown',\n  sentiment: sentimentLabel,\n  sentiment_score: sentimentScore,\n  topics: (inputData.analysis?.topics || []).join(','),\n  call_direction: inputData.metadata?.direction || 'inbound',\n  indexed_at: new Date().toISOString()\n};\n\nconst pineconePayload = {\n  vectors: [\n    {\n      id: 'call_' + inputData.call_id,\n      values: inputData.embedding.vector,\n      metadata: metadata\n    }\n  ],\n  namespace: 'call_transcripts'\n};\n\nreturn [{ json: pineconePayload }];\n"
+      },
+      "id": "eafc1ac3-69dc-46b4-b4eb-ac6e02b6ebc7",
+      "name": "Prepare Vector Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://call-transcripts-q2z77bi.svc.aped-4627-b74a.pinecone.io/vectors/upsert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Api-Key",
+              "value": "YOUR_PINECONE_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "8ef1533b-195e-4e50-ab32-3acddc6a302a",
+      "name": "Upsert to Pinecone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        32,
+        608
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.upsertedCount || 0 }}",
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "id": "77b9e5fd-967f-48e1-94ae-87c5ed65098d",
+      "name": "Upsert Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $('Vector Sync Trigger').first().json.body || $('Vector Sync Trigger').first().json;\nconst pineconeResponse = $('Upsert to Pinecone').first().json;\n\nreturn [{\n  json: {\n    status: 'success',\n    call_id: inputData.call_id,\n    vector_id: 'call_' + inputData.call_id,\n    namespace: 'call_transcripts',\n    upserted_count: pineconeResponse.upsertedCount || 1,\n    indexed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "0dfacded-8061-4b38-85a3-5f7edf6d0995",
+      "name": "Vector Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const error = $input.first().json;\nconst inputData = $('Vector Sync Trigger').first().json.body || $('Vector Sync Trigger').first().json;\n\nreturn [{\n  json: {\n    status: 'error',\n    call_id: inputData.call_id || null,\n    error_message: error.message || 'Pinecone upsert failed',\n    failed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "297381a3-ed90-48f8-95f9-9bfd976367dc",
+      "name": "Vector Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9de4c371-eb0d-4474-9b5b-fd20942daab4",
+              "leftValue": "={{ $json.upsertedCount || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        608
+      ],
+      "id": "584e152f-cabb-4855-ab2b-83543ab82b23",
+      "name": "Upsert Success 2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Vector Sync Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Vector Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vector Data": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Pinecone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Pinecone": {
+      "main": [
+        [
+          {
+            "node": "Upsert Success 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Success?": {
+      "main": [
+        [],
+        []
+      ]
+    },
+    "Upsert Success 2": {
+      "main": [
+        [
+          {
+            "node": "Vector Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vector Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b6caac20-42a8-4d58-8c53-9ea5b8b7919c",
+  "meta": {
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "DYMU4jcBI6WczYYC",
+  "tags": []
+}

@@ -1,0 +1,589 @@
+{
+  "name": "03 - CRM Sync Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-sync",
+        "options": {}
+      },
+      "id": "d89b9016-7758-43c1-87ae-e5d303d9952f",
+      "name": "CRM Sync Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1664,
+        688
+      ],
+      "webhookId": "crm-sync-trigger"
+    },
+    {
+      "parameters": {
+        "bucketName": "callcenter-processed-transcripts-prod-1-ashok",
+        "fileKey": "=processed/{{ $json.call_id }}/full_analysis.json"
+      },
+      "id": "9b5907d5-553c-40be-85da-07f128479419",
+      "name": "Download Full Analysis",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        -1248,
+        688
+      ],
+      "credentials": {
+        "aws": {
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst binaryKey = Object.keys(items[0].binary)[0];\nconst binaryBuffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\nlet jsonString = binaryBuffer.toString('utf-8').trim();\nif (jsonString.startsWith('=')) {\n  jsonString = jsonString.substring(1).trim();\n}\nconst analysisData = JSON.parse(jsonString);\n\nreturn [{ json: analysisData }];\n"
+      },
+      "id": "bc37fccd-76a0-461e-bd42-e99c2bcf9046",
+      "name": "Parse Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "search",
+        "additionalFields": {}
+      },
+      "id": "c2991138-f95c-49c8-8cfd-a9717adb74c6",
+      "name": "Search HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        688
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "k1kb4x5CjahByTDN",
+          "name": "HubSpot App Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "id": "ddeda7fa-9339-4e67-9e8f-4bf1d1db87c3",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "create"
+      },
+      "id": "c5e12a24-0c5d-4b8e-adb6-481c2154e39e",
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        832
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "k1kb4x5CjahByTDN",
+          "name": "HubSpot App Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const contacts = $('Search HubSpot Contact').first().json;\nconst analysisData = $('Parse Analysis').first().json;\n\nlet contactId;\nif (Array.isArray($('Search HubSpot Contact').all()) && $('Search HubSpot Contact').all().length > 0) {\n  contactId = $('Search HubSpot Contact').first().json.id;\n} else {\n  contactId = 'unknown';\n}\n\nreturn [{\n  json: {\n    contact_id: contactId,\n    analysis: analysisData\n  }\n}];\n"
+      },
+      "id": "0a7589c6-84a7-4793-8b82-65e89c5483f8",
+      "name": "Get Contact ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst analysis = data.analysis;\n\nconst noteBody = `\nCall Summary: ${analysis.analysis?.summary || 'N/A'}\n\nCustomer Intent: ${analysis.analysis?.customer_intent || 'N/A'}\n\nResolution: ${analysis.analysis?.resolution_status || 'unknown'}\n\nSentiment: ${analysis.analysis?.sentiment || 'neutral'}\n\nTopics: ${(analysis.analysis?.topics || []).join(', ') || 'None'}\n\nAction Items: ${(analysis.analysis?.action_items || []).join(', ') || 'None'}\n\nCall Details:\n- Duration: ${Math.floor((analysis.transcript?.duration || 0) / 60)}m\n- Agent: ${analysis.metadata?.agent_name || 'Unknown'}\n- Call ID: ${analysis.call_id}\n`;\n\nreturn [{\n  json: {\n    contact_id: data.contact_id,\n    note_body: noteBody,\n    call_id: analysis.call_id,\n    timestamp: analysis.metadata?.ended_at || new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "769ebc90-dff2-4acb-800c-9e8906ed4005",
+      "name": "Format Note for HubSpot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "engagement",
+        "type": "NOTE",
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ $json.contact_id }}"
+          }
+        }
+      },
+      "id": "1c628979-ec32-4308-bca6-d2fe3ed8e7cb",
+      "name": "Create HubSpot Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        352,
+        976
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "k1kb4x5CjahByTDN",
+          "name": "HubSpot App Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Parse Analysis').item.json.analysis.resolution_status }} ",
+              "operation": "equals",
+              "value2": "unresolved"
+            }
+          ]
+        }
+      },
+      "id": "d6fc7284-6837-4fd6-93f0-ff10c1638589",
+      "name": "Needs Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        736,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "task"
+      },
+      "id": "1cb5c3ef-9012-433b-9480-3d5058f23d75",
+      "name": "Create Follow-up Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        544
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "k1kb4x5CjahByTDN",
+          "name": "HubSpot App Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "1414560298",
+        "text": "=✅ *CRM Sync Complete*\n\n*Call ID:* {{ $('Format Note for HubSpot').item.json.call_id }}\n*Contact:* {{ $('Get Contact ID').item.json.contact_id }}\n*Status:* {{ $('Parse Analysis').item.json.analysis.resolution_status }}\n\n✅ HubSpot note created\n{{ $('Parse Analysis').item.json.analysis.resolution_status === 'unresolved' ? '⚠️ Follow-up task created' : '' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "eb1e144e-31c8-4413-b087-56488a152b77",
+      "name": "Notify Complete",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        688
+      ],
+      "webhookId": "6f906b27-971d-4137-99b1-21fe02106408",
+      "credentials": {
+        "telegramApi": {
+          "id": "vZzbzI1YiyjFFiwz",
+          "name": "Telegram account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json.body || $input.first().json;\nif (data.call_id) {\n  data.call_id = String(data.call_id).trim();\n}\nreturn [{ json: data }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1456,
+        688
+      ],
+      "id": "4030e494-c86f-4136-9eed-18c8debc91ba",
+      "name": "Extract Body"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst noteBody = (data.note_body || '').replace(/\\n/g, '<br>');\n\nreturn [{\n  json: {\n    properties: {\n      hs_note_body: noteBody,\n      hs_timestamp: new Date(data.timestamp || Date.now()).getTime().toString()\n    },\n    associations: [\n      {\n        to: { id: data.contact_id },\n        types: [\n          {\n            associationCategory: \"HUBSPOT_DEFINED\",\n            associationTypeId: 202\n          }\n        ]\n      }\n    ]\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        688
+      ],
+      "id": "2e99ff74-4add-417a-ba0e-1627d1eca0c4",
+      "name": "Build Note Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/notes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        688
+      ],
+      "id": "9f490aab-e0bf-46af-9222-f9213dba39c1",
+      "name": "Create HubSpot Note1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BxV1MQtJRrsWIWYJ",
+          "name": "Header Auth account 10"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c60695f1-0bc1-4e01-a559-52141d93a84f",
+              "leftValue": "={{ $('Parse Analysis').first().json.analysis.resolution_status }}",
+              "rightValue": "unresolved",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        736,
+        656
+      ],
+      "id": "065af76c-d377-42b2-8ae2-e72a8e1132a8",
+      "name": "Needs Follow-up1?"
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "engagement",
+        "type": "task",
+        "metadata": {
+          "body": "=Action items from call {{ $('Format Note for HubSpot').first().json.call_id }}",
+          "status": "NOT_STARTED",
+          "subject": "=Follow-up: {{ $('Parse Analysis').first().json.analysis.customer_intent }}"
+        },
+        "additionalFields": {
+          "associations": {
+            "contactIds": "={{ $('Get Contact ID').first().json.contact_id }}"
+          }
+        }
+      },
+      "id": "369fb53c-3270-442c-a07e-f43056e5dbbe",
+      "name": "Create Follow-up Task2",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        976,
+        544
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "k1kb4x5CjahByTDN",
+          "name": "HubSpot App Token account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "CRM Sync Trigger": [
+      {
+        "json": {
+          "headers": {
+            "host": "aiamfspr.app.n8n.cloud",
+            "user-agent": "axios/1.15.0",
+            "content-length": "21",
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "accept-encoding": "gzip, br",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "20.218.174.15",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "DE",
+            "cf-ray": "9f4669bef895d38c-FRA",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "x-forwarded-for": "20.218.174.15, 172.71.172.15",
+            "x-forwarded-host": "aiamfspr.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-70-b9cddcbb8-swhgk",
+            "x-is-trusted": "yes",
+            "x-real-ip": "20.218.174.15"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "call_id": "10011\n"
+          },
+          "webhookUrl": "https://aiamfspr.app.n8n.cloud/webhook/crm-sync",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "CRM Sync Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Full Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Analysis": {
+      "main": [
+        [
+          {
+            "node": "Search HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Contact ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Get Contact ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact ID": {
+      "main": [
+        [
+          {
+            "node": "Format Note for HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Note for HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Build Note Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Note": {
+      "main": [
+        []
+      ]
+    },
+    "Needs Follow-up?": {
+      "main": [
+        [],
+        []
+      ]
+    },
+    "Create Follow-up Task": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Body": {
+      "main": [
+        [
+          {
+            "node": "Download Full Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Note Payload": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Note1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Note1": {
+      "main": [
+        [
+          {
+            "node": "Needs Follow-up1?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Follow-up1?": {
+      "main": [
+        [
+          {
+            "node": "Create Follow-up Task2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Follow-up Task2": {
+      "main": [
+        [
+          {
+            "node": "Notify Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "88b8946d-9e9d-4b1f-a96a-1e31767a3bf1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "XmOVDsZ26usyti0u",
+  "tags": [
+    {
+      "updatedAt": "2026-04-29T13:14:06.762Z",
+      "createdAt": "2026-04-29T13:14:06.762Z",
+      "id": "N0Grp0cYpMAzIRz9",
+      "name": "crm-sync"
+    },
+    {
+      "updatedAt": "2026-04-27T14:01:46.225Z",
+      "createdAt": "2026-04-27T14:01:46.225Z",
+      "id": "qm7fANEcKcfNDv8i",
+      "name": "call-center"
+    }
+  ]
+}

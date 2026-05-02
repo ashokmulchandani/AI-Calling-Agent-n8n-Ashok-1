@@ -1,0 +1,401 @@
+{
+  "name": "02 - AI Processing Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-call",
+        "options": {}
+      },
+      "id": "5b1b5149-407d-41e4-be18-79d5c84626dd",
+      "name": "Process Trigger1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        432
+      ],
+      "webhookId": "process-call-trigger"
+    },
+    {
+      "parameters": {
+        "bucketName": "=callcenter-raw-audio-prod-1-ashok",
+        "fileKey": "={{ $json.audio_key }}"
+      },
+      "id": "5ab9bbfe-ed8c-4ebd-a534-f1ce8cf4e07b",
+      "name": "Download Audio from S",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        2608,
+        432
+      ],
+      "credentials": {
+        "aws": {
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ashok-mnuduagy-eastus2.cognitiveservices.azure.com/openai/deployments/whisper-1/audio/transcriptions?api-version=2024-06-01",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            },
+            {
+              "name": "timestamp_granularities[]",
+              "value": "segment"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "daa5a36a-db65-4a93-b6f2-4dad481f7250",
+      "name": "Azure Whisper Transcription1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2800,
+        432
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SQmv9So7FGkcmUbu",
+          "name": "Header Auth account 6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const whisperResponse = $input.first().json;\nconst inputData = $('Extract Body').first().json;\n\n\n\nconst transcript = {\n  call_id: inputData.call_id,\n  full_text: whisperResponse.text,\n  language: whisperResponse.language,\n  duration: whisperResponse.duration,\n  segments: (whisperResponse.segments || []).map(seg => ({\n    id: seg.id,\n    start: seg.start,\n    end: seg.end,\n    text: seg.text.trim(),\n    confidence: seg.confidence || null\n  })),\n  word_count: whisperResponse.text.split(/\\s+/).length,\n  transcribed_at: new Date().toISOString()\n};\n\nreturn [{ json: transcript }];\n"
+      },
+      "id": "0c29c25c-adeb-4783-a370-ed3df530a8cb",
+      "name": "Process Transcript1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://testashok1.openai.azure.com/openai/deployments/testashok1-gpt-4o-mini/chat/completions?api-version=2025-01-01-preview",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert call center analyst. Analyze the following call transcript and extract structured information. Be precise and factual.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze this call transcript and provide:\\n\\n1. **Call Summary** (2-3 sentences)\\n2. **Customer Intent** (what the customer wanted)\\n3. **Resolution Status** (resolved/unresolved/escalated)\\n4. **Key Topics** (list of main topics discussed)\\n5. **Customer Sentiment** (positive/neutral/negative with confidence 0-100)\\n6. **Action Items** (any follow-ups needed)\\n7. **Entities Mentioned** (products, services, account numbers, etc.)\\n\\nTranscript:\\n{{ $json.full_text }}\\n\\nRespond in JSON format with these exact keys: summary, customer_intent, resolution_status, topics, sentiment, action_items, entities\"\n    }\n  ],\n  \"temperature\": 0.3,\n  \"max_tokens\": 2000,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {}
+      },
+      "id": "d2e3f338-66aa-4a78-840c-e7cb71203101",
+      "name": "GPT-4 Call Analysis1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3200,
+        432
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "FSRFj6dnf9FUrPrj",
+          "name": "Header Auth account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const gptResponse = $input.first().json;\nconst transcript = $('Process Transcript1').first().json;\nconst inputData = $('Extract Body').first().json;\n\n\nlet analysis;\ntry {\n  const content = gptResponse.choices[0].message.content;\n  analysis = JSON.parse(content);\n} catch (e) {\n  analysis = {\n    summary: 'Analysis parsing failed',\n    customer_intent: 'Unknown',\n    resolution_status: 'unknown',\n    topics: [],\n    sentiment: { label: 'neutral', confidence: 0 },\n    action_items: [],\n    entities: []\n  };\n}\n\nconst processedCall = {\n  call_id: transcript.call_id,\n  transcript: {\n    full_text: transcript.full_text,\n    segments: transcript.segments,\n    word_count: transcript.word_count,\n    duration: transcript.duration,\n    language: transcript.language\n  },\n  analysis: {\n    summary: analysis.summary,\n    customer_intent: analysis.customer_intent,\n    resolution_status: analysis.resolution_status,\n    topics: Array.isArray(analysis.topics) ? analysis.topics : [],\n    sentiment: analysis.sentiment,\n    action_items: Array.isArray(analysis.action_items) ? analysis.action_items : [],\n    entities: Array.isArray(analysis.entities) ? analysis.entities : []\n  },\n  metadata: inputData.metadata || {},\n  processing: {\n    transcribed_at: transcript.transcribed_at,\n    analyzed_at: new Date().toISOString(),\n    model_used: 'gpt-4o',\n    whisper_model: 'whisper-1',\n    workflow_version: '1.0.0'\n  }\n};\n\nreturn [{ json: processedCall }];\n"
+      },
+      "id": "2e40c460-84e6-4c47-b3ec-310b21053e7f",
+      "name": "Combine Results1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://testashok1.openai.azure.com/openai/deployments/testashok1-noble-oak-text-embedding-3-small/embeddings?api-version=2023-05-15",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"input\": \"{{ $json.transcript.full_text.substring(0, 8000) }}\",\n  \"model\": \"text-embedding-ada-002\"\n}",
+        "options": {}
+      },
+      "id": "d42a0266-6926-444e-8afb-6b0e6fc8da15",
+      "name": "Generate Embedding1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3600,
+        432
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ah8jicAqlKm5yct7",
+          "name": "Header Auth account 8"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const processedCall = $('Combine Results1').first().json;\nconst embeddingResponse = $input.first().json;\n\nprocessedCall.embedding = {\n  vector: embeddingResponse.data[0].embedding,\n  model: 'text-embedding-3-small',\n  dimensions: embeddingResponse.data[0].embedding.length,\n  generated_at: new Date().toISOString()\n};\n\nreturn [{ json: processedCall }];\n"
+      },
+      "id": "1bcceff4-e954-44f9-bd0f-711bf597eff6",
+      "name": "Add Embedding1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3808,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "callcenter-processed-transcripts-prod-1-ashok",
+        "fileName": "=processed/{{ $json.call_id }}/full_analysis.json",
+        "binaryData": false,
+        "fileContent": "={{ JSON.stringify($json, null, 2) }}",
+        "additionalFields": {}
+      },
+      "id": "3ae679bd-aea1-4987-a2f4-0d720d595681",
+      "name": "Save to S3 Processed1",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        4000,
+        432
+      ],
+      "credentials": {
+        "aws": {
+          "id": "vnCDisuFwOmMBxTz",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aiamfspr.app.n8n.cloud/webhook/crm-sync",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "call_id",
+              "value": "={{ $('Add Embedding1').first().json.call_id }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ed23614c-4fa2-40f7-82a5-228408ef9c3f",
+      "name": "Trigger CRM Sync1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4208,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json.body || $input.first().json;\nreturn [{ json: data }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        432
+      ],
+      "id": "40c3b6fa-3181-4ed7-95fc-f46ba50d7dc5",
+      "name": "Extract Body"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Add Embedding1').first().json;\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://aiamfspr.app.n8n.cloud/webhook/vector-sync',\n  body: data,\n  headers: { 'Content-Type': 'application/json' }\n});\nreturn [{ json: { pinecone_trigger: 'sent', call_id: data.call_id } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        432
+      ],
+      "id": "2f6df20a-3487-4fb9-9a31-3e74b63aee39",
+      "name": "Trigger Pinecone Sync"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Process Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Extract Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio from S": {
+      "main": [
+        [
+          {
+            "node": "Azure Whisper Transcription1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure Whisper Transcription1": {
+      "main": [
+        [
+          {
+            "node": "Process Transcript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Transcript1": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Call Analysis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Call Analysis1": {
+      "main": [
+        [
+          {
+            "node": "Combine Results1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Results1": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding1": {
+      "main": [
+        [
+          {
+            "node": "Add Embedding1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Embedding1": {
+      "main": [
+        [
+          {
+            "node": "Save to S3 Processed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to S3 Processed1": {
+      "main": [
+        [
+          {
+            "node": "Trigger CRM Sync1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Body": {
+      "main": [
+        [
+          {
+            "node": "Download Audio from S",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger CRM Sync1": {
+      "main": [
+        [
+          {
+            "node": "Trigger Pinecone Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e39443ca-c529-4476-81df-7b914a9a1c52",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "iId1E3iHcVqwYMXw",
+  "tags": [
+    {
+      "updatedAt": "2026-04-27T14:01:46.260Z",
+      "createdAt": "2026-04-27T14:01:46.260Z",
+      "id": "0KeZFhF36Nsor9m8",
+      "name": "ai-processing"
+    },
+    {
+      "updatedAt": "2026-04-27T14:01:46.225Z",
+      "createdAt": "2026-04-27T14:01:46.225Z",
+      "id": "qm7fANEcKcfNDv8i",
+      "name": "call-center"
+    }
+  ]
+}

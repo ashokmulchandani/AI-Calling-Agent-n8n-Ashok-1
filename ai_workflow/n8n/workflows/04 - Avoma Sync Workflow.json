@@ -1,0 +1,280 @@
+{
+  "name": "04 - Avoma Sync Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avoma-sync",
+        "options": {}
+      },
+      "id": "d42fa7d8-9909-47af-b907-3535a1a396ce",
+      "name": "Avoma Sync Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        464
+      ],
+      "webhookId": "avoma-sync-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.first().json.body || $input.first().json;\n\nconst startDate = inputData.metadata?.started_at || new Date().toISOString();\nconst endDate = inputData.metadata?.ended_at || new Date().toISOString();\n\nconst avomaPayload = {\n  external_id: String(inputData.call_id),\n  title: 'Call with ' + (inputData.metadata?.caller_name || 'Customer'),\n  from_date: startDate,\n  to_date: endDate,\n  duration_minutes: Math.ceil((inputData.metadata?.duration_seconds || 0) / 60),\n  participants: [\n    {\n      name: inputData.metadata?.caller_name || 'Customer',\n      role: 'external'\n    },\n    {\n      name: inputData.metadata?.agent_name || 'Agent',\n      email: inputData.metadata?.agent_email || null,\n      role: 'internal'\n    }\n  ],\n  summary: inputData.analysis?.summary || '',\n  topics: inputData.analysis?.topics || [],\n  action_items: (inputData.analysis?.action_items || []).map(function(item) {\n    return { description: item, status: 'pending' };\n  }),\n  source: 'call_center_ai',\n  call_direction: inputData.metadata?.direction || 'inbound'\n};\n\nreturn [{ json: avomaPayload }];\n"
+      },
+      "id": "0a5477d5-872f-4c17-ae61-9374ceb6f54c",
+      "name": "Format Avoma Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.avoma.com/v1/meetings/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_AVOMA_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "7ede5996-ab7a-49e0-832c-df7a10f7bd35",
+      "name": "Create Avoma Meeting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        256,
+        464
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.statusCode || 200 }}",
+              "value2": 300
+            }
+          ]
+        }
+      },
+      "id": "93013b4f-2b98-4b4e-af08-fd45b99c8e0a",
+      "name": "Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        144,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.avoma.com/v1/meetings/{{ $json.meeting_id }}/notes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_AVOMA_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ notes: $json.notes }) }}",
+        "options": {}
+      },
+      "id": "dcedcf2f-b97d-4a8c-a557-2cf68099486a",
+      "name": "Add AI Notes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        880,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const avomaResponse = $('Create Avoma Meeting').first().json;\nconst inputData = $('Avoma Sync Trigger').first().json.body || $('Avoma Sync Trigger').first().json;\n\nreturn [{\n  json: {\n    status: 'success',\n    call_id: inputData.call_id,\n    avoma_meeting_id: avomaResponse.id || null,\n    synced_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "abd785f2-57ad-46de-a517-1052271f506b",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const error = $input.first().json;\nconst inputData = $('Avoma Sync Trigger').first().json.body || $('Avoma Sync Trigger').first().json;\n\nreturn [{\n  json: {\n    status: 'error',\n    call_id: inputData.call_id || null,\n    error_message: error.message || 'Avoma sync failed',\n    failed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "bd8b4563-c893-4bbe-be3d-b533d2559cc4",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e9f66b4e-9ef6-4a49-8c68-5af1d70505c2",
+              "leftValue": "={{ $json.statusCode || 200 }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        400
+      ],
+      "id": "75c3aa87-1886-4777-8f9d-e8f87f2799fa",
+      "name": "Success2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const avomaResponse = $('Create Avoma Meeting').first().json;\nconst inputData = $('Avoma Sync Trigger').first().json.body || $('Avoma Sync Trigger').first().json;\n\nreturn [{\n  json: {\n    meeting_id: avomaResponse.id,\n    notes: [\n      {\n        type: 'summary',\n        title: 'AI Summary',\n        content: inputData.analysis?.summary || 'No summary available'\n      },\n      {\n        type: 'key_topics',\n        title: 'Topics Discussed',\n        content: (inputData.analysis?.topics || []).join(', ') || 'None'\n      },\n      {\n        type: 'entities',\n        title: 'Entities Mentioned',\n        content: (inputData.analysis?.entities || []).join(', ') || 'None'\n      }\n    ]\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        320
+      ],
+      "id": "4ffc5636-a971-44ef-8cae-016f7513c739",
+      "name": "Build Notes Payload"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Avoma Sync Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Avoma Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Avoma Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Avoma Meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Avoma Meeting": {
+      "main": [
+        [
+          {
+            "node": "Success2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success?": {
+      "main": [
+        [],
+        []
+      ]
+    },
+    "Add AI Notes": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success2": {
+      "main": [
+        [
+          {
+            "node": "Build Notes Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notes Payload": {
+      "main": [
+        [
+          {
+            "node": "Add AI Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6a1bc75d-d476-48d0-a159-cc7337d81c6f",
+  "meta": {
+    "instanceId": "173b8a4569ad20652b77d367a41b875becb1783402651413873b07ab973a7fb1"
+  },
+  "id": "QQwBrf4xcgnEM3s3",
+  "tags": []
+}
