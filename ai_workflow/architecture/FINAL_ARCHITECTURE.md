@@ -4,169 +4,122 @@
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Orchestration | N8N Only | Simpler, visual debugging, great for learning |
-| File Transfer | Direct API (No Axway) | Greenfield setup, no legacy systems |
-| Integrations | HubSpot + Avoma + Pinecone | Full AI-powered call intelligence |
+| Orchestration | n8n Cloud | Visual debugging, webhook support, no infra to manage |
+| File Transfer | Direct API (Aircall → S3) | Greenfield setup, no legacy systems |
+| Integrations | HubSpot + Pinecone + Telegram | Full AI-powered call intelligence |
+| Avoma | Native Aircall integration | Auto-syncs calls, API is read-only |
+| Notifications | Telegram | Simpler than Slack, instant mobile alerts |
 
 ---
 
 ## Final System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                     CALL CENTER AI WORKFLOW - FINAL DESIGN                       │
-│                              (N8N Orchestrated)                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     CALL CENTER AI WORKFLOW - PRODUCTION                     │
+│                           (n8n Cloud Orchestrated)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
 
                               ┌─────────────────┐
-                              │    Customer     │
-                              │     Call        │
+                              │   Customer Call  │
                               └────────┬────────┘
                                        │
                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  INGEST LAYER                                                                    │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│  │   Aircall   │───▶│ N8N Webhook │───▶│  Validate   │───▶│  Upload to  │       │
-│  │   Platform  │    │   Receive   │    │  & Enrich   │    │     S3      │       │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘       │
-│                                                                   │              │
-└───────────────────────────────────────────────────────────────────┼──────────────┘
-                                                                    │
-                                                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  AI PROCESSING LAYER (N8N Workflow)                                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│  │   Azure     │───▶│  Speaker    │───▶│   Azure     │───▶│   Azure     │       │
-│  │   Whisper   │    │  Diarize    │    │   GPT-4     │    │  Embeddings │       │
-│  │ (Transcribe)│    │  (Label)    │    │ (Summarize) │    │ (ada-002)   │       │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘       │
-│                                                                   │              │
-└───────────────────────────────────────────────────────────────────┼──────────────┘
-                                                                    │
-                          ┌─────────────────────────────────────────┼───────┐
-                          │                                         │       │
-                          ▼                                         ▼       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  OUTPUT LAYER                                                                    │
-│                                                                                  │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐             │
-│  │    HubSpot      │    │     Avoma       │    │    Pinecone     │             │
-│  │    CRM          │    │   AI Notes      │    │   Vector DB     │             │
-│  │                 │    │                 │    │                 │             │
-│  │ • Contact Link  │    │ • Call Summary  │    │ • Semantic      │             │
-│  │ • Call Activity │    │ • Key Moments   │    │   Search        │             │
-│  │ • Follow-up     │    │ • Action Items  │    │ • Similar Calls │             │
-│  │   Tasks         │    │ • Coaching Tips │    │ • Analytics     │             │
-│  │ • Timeline      │    │                 │    │                 │             │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘             │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WORKFLOW 01 - INGEST LAYER                                                 │
+│  Aircall webhook (call.ended) → Filter → Extract Metadata                   │
+│  → Has Recording? → Download → Upload S3 (raw) → Save Metadata             │
+│  → Trigger Workflow 02 → Telegram notification                              │
+└────────────────────────────────────────────────────────┬────────────────────┘
+                                                         │
+                                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WORKFLOW 02 - AI PROCESSING LAYER                                          │
+│  Download from S3 → Azure Whisper (transcription)                           │
+│  → Process Transcript → GPT-4o-mini (analysis) → Combine Results            │
+│  → text-embedding-3-small (1536-dim) → Save to S3 (processed)              │
+│  → Trigger Workflow 03 + 05                                                 │
+└──────────────────────┬──────────────────────────┬──────────────────────────┘
+                       │                          │
+                       ▼                          ▼
+┌──────────────────────────────────┐  ┌──────────────────────────────────────┐
+│  WORKFLOW 03 - CRM SYNC          │  │  WORKFLOW 05 - VECTOR SYNC           │
+│  Download analysis from S3       │  │  Prepare flat metadata               │
+│  → Search HubSpot contact        │  │  → Upsert to Pinecone               │
+│  → Create note (HTTP API)        │  │  → call_transcripts namespace        │
+│  → Needs follow-up? → Task       │  │                                      │
+│  → Telegram notification         │  │                                      │
+└──────────────────────────────────┘  └──────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  OBSERVABILITY LAYER                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│  │ N8N Logs    │    │ CloudWatch  │    │ Slack       │    │ Dashboard   │       │
-│  │ (Execution) │    │ (AWS)       │    │ (Alerts)    │    │ (Metrics)   │       │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘       │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  WORKFLOW 06 - ERROR HANDLER                                                │
+│  Any workflow failure → Enrich Error → Should Retry?                        │
+│  → YES (count < 3): Retry original workflow                                 │
+│  → NO: Save to S3 DLQ → Telegram alert → Critical? → Page On-Call          │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## N8N Workflow Overview
+## Service Dependencies
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         N8N WORKFLOW ORCHESTRATION                               │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   WORKFLOW 1: Call Ingest                                                        │
-│   ────────────────────────                                                       │
-│   Trigger: Aircall Webhook (call.ended)                                         │
-│   Steps: Validate → Download Recording → Upload S3 → Trigger Processing         │
-│   Output: Audio + metadata in S3                                                 │
-│                                                                                  │
-│   WORKFLOW 2: AI Processing                                                      │
-│   ─────────────────────────                                                      │
-│   Trigger: S3 upload OR HTTP trigger                                            │
-│   Steps: Transcribe → Analyze → Embed → Store                                   │
-│   Output: Transcript, summary, embeddings in S3                                  │
-│                                                                                  │
-│   WORKFLOW 3: CRM Sync                                                           │
-│   ────────────────────                                                           │
-│   Trigger: Processing complete                                                   │
-│   Steps: Match Contact → Create Note → Create Task → Notify                      │
-│   Output: HubSpot updated with call data                                         │
-│                                                                                  │
-│   WORKFLOW 4: Avoma Sync                                                         │
-│   ─────────────────────                                                          │
-│   Trigger: Processing complete                                                   │
-│   Steps: Format Notes → Push to Avoma API                                        │
-│   Output: AI notes in Avoma                                                      │
-│                                                                                  │
-│   WORKFLOW 5: Vector Store                                                       │
-│   ─────────────────────────                                                      │
-│   Trigger: Embeddings generated                                                  │
-│   Steps: Format → Upsert to Pinecone                                            │
-│   Output: Searchable call transcript vectors                                     │
-│                                                                                  │
-│   WORKFLOW 6: Error Handler                                                      │
-│   ─────────────────────────                                                      │
-│   Trigger: Any workflow error                                                    │
-│   Steps: Log → Retry (3x) → DLQ → Alert                                         │
-│   Output: Error handled or escalated                                             │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+| Service | Purpose | Credentials |
+|---------|---------|-------------|
+| **n8n Cloud** | Workflow orchestration | Cloud account |
+| **Aircall** | Call recording + webhooks | API ID + Token |
+| **AWS S3** | Audio + data storage | IAM Access Key + Secret |
+| **Azure OpenAI (Whisper)** | Transcription | API Key (separate resource) |
+| **Azure OpenAI (GPT-4 + Embeddings)** | Analysis + vectors | API Key |
+| **HubSpot** | CRM | Private App Token |
+| **Pinecone** | Vector database | API Key |
+| **Telegram** | Notifications + alerts | Bot Token + Chat ID |
+| **Avoma** | AI meeting notes | Native Aircall sync (no API) |
 
 ---
 
 ## Data Models
 
-### Call Record (S3: processed/{call_id}/analysis.json)
+### Call Record (S3: processed/{call_id}/full_analysis.json)
 
 ```json
 {
-  "call_id": "abc123",
-  "metadata": {
-    "caller_number": "+1234567890",
-    "caller_name": "John Doe",
-    "agent_id": "agent_001",
-    "agent_name": "Jane Smith",
-    "direction": "inbound",
-    "duration_seconds": 342,
-    "started_at": "2024-01-15T10:30:00Z",
-    "ended_at": "2024-01-15T10:35:42Z"
-  },
+  "call_id": "12345",
   "transcript": {
     "full_text": "Agent: Thank you for calling...",
     "segments": [
-      {"speaker": "agent", "start": 0.0, "end": 5.2, "text": "Thank you for calling..."},
-      {"speaker": "customer", "start": 5.5, "end": 12.1, "text": "Hi, I'm calling about..."}
+      {"id": 0, "start": 0.0, "end": 5.2, "text": "Thank you for calling...", "confidence": 0.95}
     ],
     "word_count": 1234,
+    "duration": 120.5,
     "language": "en"
   },
   "analysis": {
     "summary": "Customer called to inquire about...",
     "customer_intent": "Product inquiry",
     "resolution_status": "resolved",
-    "topics": ["product-info", "pricing", "shipping"],
+    "topics": ["product-info", "pricing"],
     "sentiment": {"label": "positive", "confidence": 85},
-    "action_items": [],
+    "action_items": ["Send follow-up email"],
     "entities": ["Product X", "Premium Plan"]
   },
-  "integrations": {
-    "hubspot_contact_id": "12345",
-    "hubspot_engagement_id": "67890",
-    "avoma_note_id": "avo_123",
-    "pinecone_vector_id": "vec_abc123"
+  "embedding": {
+    "vector": [0.123, -0.456, ...],
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "generated_at": "2024-01-15T10:36:30Z"
+  },
+  "metadata": {
+    "direction": "inbound",
+    "duration": 120,
+    "caller_number": "+61400000000",
+    "agent_name": "Agent Name"
   },
   "processing": {
     "transcribed_at": "2024-01-15T10:36:00Z",
     "analyzed_at": "2024-01-15T10:36:30Z",
-    "synced_at": "2024-01-15T10:37:00Z"
+    "model_used": "gpt-4o",
+    "whisper_model": "whisper-1",
+    "workflow_version": "1.0.0"
   }
 }
 ```
@@ -175,67 +128,62 @@
 
 ```json
 {
-  "id": "call_abc123",
-  "values": [0.123, -0.456, ...],  // 1536 dimensions
+  "id": "call_12345",
+  "values": [0.123, -0.456, ...],
   "metadata": {
-    "call_id": "abc123",
-    "caller_name": "John Doe",
-    "agent_name": "Jane Smith",
-    "date": "2024-01-15",
+    "call_id": "12345",
     "summary": "Customer inquiry about Product X",
     "sentiment": "positive",
+    "sentiment_score": 85,
+    "resolution_status": "resolved",
     "topics": ["product-info", "pricing"],
-    "duration_seconds": 342
+    "duration": 120,
+    "direction": "inbound",
+    "agent_name": "Agent Name",
+    "processed_at": "2024-01-15T10:36:30Z"
   }
 }
 ```
 
----
-
-## Service Dependencies
-
-| Service | Purpose | Required Credentials |
-|---------|---------|---------------------|
-| **N8N** | Workflow orchestration | Self-hosted or n8n.cloud |
-| **Aircall** | Call recording & webhooks | API Key + Webhook Secret |
-| **AWS S3** | Audio & data storage | Access Key + Secret Key |
-| **Azure OpenAI** | Whisper, GPT-4, Embeddings | API Key + Endpoint |
-| **HubSpot** | CRM integration | OAuth or Private App Token |
-| **Avoma** | AI meeting notes | API Key |
-| **Pinecone** | Vector database | API Key + Environment |
-| **Slack** | Notifications | Bot Token |
+Note: Pinecone metadata must be flat — no nested objects. Sentiment is split into `sentiment` (string) and `sentiment_score` (number).
 
 ---
 
-## Implementation Files
+## Error Handling
 
+### DLQ Record (S3: errors/dlq/{error_id}.json)
+
+```json
+{
+  "error_id": "ERR-1700000000000-abc123",
+  "timestamp": "2024-01-15T10:40:00Z",
+  "source_workflow": "02 - AI Processing Workflow",
+  "source_node": "Azure Whisper",
+  "error_message": "API timeout after 30s",
+  "error_type": "timeout",
+  "call_id": "12345",
+  "severity": "high",
+  "retry_count": 3,
+  "max_retries": 3,
+  "original_payload": {}
+}
 ```
-ai_workflow/
-├── architecture/
-│   ├── ARCHITECTURE.md           # Initial design
-│   ├── ARCHITECTURE_REVIEW.md    # Expert review
-│   └── FINAL_ARCHITECTURE.md     # This file
-├── n8n/
-│   ├── workflows/
-│   │   ├── 01_call_ingest.json          # Aircall → S3
-│   │   ├── 02_ai_processing.json        # Whisper → GPT-4 → Embed
-│   │   ├── 03_hubspot_sync.json         # → HubSpot CRM
-│   │   ├── 04_avoma_sync.json           # → Avoma Notes
-│   │   ├── 05_pinecone_sync.json        # → Vector DB
-│   │   └── 06_error_handler.json        # Error handling
-│   ├── credentials/
-│   │   └── credentials_template.json
-│   └── docker-compose.yml
-├── aws/
-│   ├── s3_buckets.tf                    # Terraform for S3
-│   ├── iam_policies.json
-│   └── cloudformation.yaml
-├── prompts/
-│   ├── call_analysis.md                 # GPT-4 analysis prompt
-│   └── ontology_extraction.md           # Entity extraction prompt
-├── config/
-│   └── .env.example
-└── docs/
-    ├── SETUP_GUIDE.md
-    └── TROUBLESHOOTING.md
-```
+
+### Severity Defaults
+
+| Source Workflow | Default Severity |
+|----------------|-----------------|
+| 02 - AI Processing | high |
+| 03 - CRM Sync | medium |
+| 05 - Pinecone Vector Sync | low |
+
+---
+
+## Known Limitations
+
+- **n8n Cloud free plan**: No environment variables — all values hardcoded in workflow JSONs
+- **n8n import quirks**: Code nodes import as templates, IF nodes may need v2 upgrade, HTTP methods may reset to GET
+- **Avoma API**: Read-only (`/v1/meetings/` is GET). Relies on native Aircall integration for sync
+- **HubSpot Engagement node**: Doesn't support NOTE type — uses direct HTTP API call instead
+- **Pinecone metadata**: Must be flat values only (no nested objects)
+- **Azure Whisper**: On separate resource from GPT-4/Embeddings — requires separate API key
