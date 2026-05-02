@@ -13,3 +13,6 @@ credentials
 # Secrets
 *.secret
 *.credentials
+
+# Temp files
+temp_*.json
