@@ -207,7 +207,8 @@
   "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "errorWorkflow": "meXAMnmcpGE2wTy7"
   },
   "versionId": "b6caac20-42a8-4d58-8c53-9ea5b8b7919c",
   "meta": {

@@ -13,9 +13,33 @@
       "typeVersion": 1,
       "position": [
         448,
-        480
+        380
       ],
       "webhookId": "error-handler-webhook"
+    },
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        448,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\n\nconst execution = errorData.execution || {};\nconst workflow = errorData.workflow || {};\nconst lastNode = execution.lastNodeExecuted || 'Unknown';\n\nlet errorMessage = 'Unknown error';\ntry {\n  const runData = execution.error?.message || '';\n  if (runData) {\n    errorMessage = runData;\n  } else if (execution.error) {\n    errorMessage = JSON.stringify(execution.error).substring(0, 500);\n  }\n} catch (e) {\n  errorMessage = 'Error parsing failed';\n}\n\nreturn [{\n  json: {\n    source_workflow: workflow.name || 'Unknown',\n    source_node: lastNode,\n    error_message: errorMessage,\n    error_type: 'workflow_error',\n    call_id: null,\n    severity: null,\n    retry_eligible: true,\n    retry_count: 0,\n    original_payload: {}\n  }\n}];"
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Normalize Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        580
+      ]
     },
     {
       "parameters": {
@@ -26,7 +50,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        640,
+        848,
         480
       ]
     },
@@ -66,7 +90,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        848,
+        1056,
         480
       ]
     },
@@ -79,7 +103,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
+        1248,
         384
       ]
     },
@@ -97,7 +121,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1248,
+        1456,
         384
       ]
     },
@@ -115,7 +139,7 @@
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 1,
       "position": [
-        1040,
+        1248,
         592
       ],
       "credentials": {
@@ -138,7 +162,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
       "position": [
-        1248,
+        1456,
         592
       ],
       "webhookId": "17bbff05-207c-45a4-aec7-a4aed5a3b450",
@@ -176,7 +200,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1440,
+        1648,
         592
       ]
     },
@@ -193,7 +217,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
       "position": [
-        1648,
+        1856,
         480
       ],
       "webhookId": "420960ad-56d8-401c-a523-81a48f2de5a0",
@@ -208,6 +232,28 @@
   "pinData": {},
   "connections": {
     "Error Webhook": {
+      "main": [
+        [
+          {
+            "node": "Enrich Error Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Error": {
       "main": [
         [
           {
