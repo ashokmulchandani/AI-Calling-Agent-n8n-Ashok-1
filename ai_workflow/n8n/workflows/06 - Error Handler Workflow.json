@@ -18,7 +18,9 @@
       "webhookId": "error-handler-webhook"
     },
     {
-      "parameters": {},
+      "parameters": {
+        "jsCode": "const data = $input.first().json.body || $input.first().json;\n\nconst errorId = `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;\n\nconst severityMap = {\n  '02 - AI Processing Workflow': 'high',\n  '03 - CRM Sync Workflow': 'medium',\n  '05 - Pinecone Vector Sync Workflow': 'low'\n};\n\nreturn [{\n  json: {\n    error_id: errorId,\n    timestamp: new Date().toISOString(),\n    source_workflow: data.source_workflow || 'Unknown',\n    source_node: data.source_node || 'Unknown',\n    error_message: data.error_message || 'No error message provided',\n    error_type: data.error_type || 'unknown',\n    call_id: data.call_id || null,\n    severity: data.severity || severityMap[data.source_workflow] || 'medium',\n    retry_eligible: data.retry_eligible !== false,\n    retry_count: data.retry_count || 0,\n    max_retries: 3,\n    original_payload: data.original_payload || {}\n  }\n}];"
+      },
       "id": "4c6b0271-85ea-4f4d-afcb-737e2aa6d0f7",
       "name": "Enrich Error Data",
       "type": "n8n-nodes-base.code",
@@ -31,25 +33,47 @@
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.retry_eligible && $json.retry_count < $json.max_retries }}",
-              "value2": true
+              "id": "should-retry-1",
+              "leftValue": "={{ $json.retry_eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "should-retry-2",
+              "leftValue": "={{ $json.retry_count }}",
+              "rightValue": "={{ $json.max_retries }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "be8dbdd6-9349-4cd6-98cd-c38b35eae353",
       "name": "Should Retry?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         848,
         480
       ]
     },
     {
-      "parameters": {},
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst webhookMap = {\n  '02 - AI Processing Workflow': 'process-call',\n  '03 - CRM Sync Workflow': 'crm-sync',\n  '05 - Pinecone Vector Sync Workflow': 'vector-sync'\n};\n\nconst webhook = webhookMap[item.source_workflow] || 'process-call';\n\nreturn [{\n  json: {\n    retry_url: `https://aiamfspr.app.n8n.cloud/webhook/${webhook}`,\n    retry_payload: item.original_payload,\n    retry_count: item.retry_count + 1,\n    error_id: item.error_id,\n    source_workflow: item.source_workflow\n  }\n}];"
+      },
       "id": "2305efd4-8c80-485b-90a3-086d67e4d709",
       "name": "Prepare Retry",
       "type": "n8n-nodes-base.code",
@@ -61,7 +85,8 @@
     },
     {
       "parameters": {
-        "url": "=https://aiamfspr.app.n8n.cloud/webhook/{{ $json.source_workflow === '02 - AI Processing Workflow' ? 'process-call' : $json.source_workflow === '03 - CRM Sync Workflow' ? 'crm-sync' : $json.source_workflow === '04 - Avoma Sync Workflow' ? 'avoma-sync' : 'vector-sync' }}",
+        "method": "POST",
+        "url": "={{ $json.retry_url }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.retry_payload) }}",
@@ -78,7 +103,12 @@
     },
     {
       "parameters": {
-        "operation": "putObject"
+        "operation": "upload",
+        "bucketName": "callcenter-processed-transcripts-prod-1-ashok",
+        "fileName": "=errors/dlq/{{ $json.error_id }}.json",
+        "binaryData": false,
+        "fileContent": "={{ JSON.stringify($json, null, 2) }}",
+        "additionalFields": {}
       },
       "id": "44ee2aa7-96f1-44a7-b7f4-30c02a7a0fe7",
       "name": "Save to DLQ (S3)",
@@ -122,19 +152,29 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $('Enrich Error Data').item.json.severity }}",
-              "operation": "equals",
-              "value2": "critical"
+              "id": "is-critical-1",
+              "leftValue": "={{ $('Enrich Error Data').item.json.severity }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "06bda124-0c76-4a6b-8dcf-3fcb40692660",
       "name": "Is Critical?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         1440,
         592
