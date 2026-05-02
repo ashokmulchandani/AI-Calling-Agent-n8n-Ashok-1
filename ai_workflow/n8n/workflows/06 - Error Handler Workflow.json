@@ -30,7 +30,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const errorData = $input.first().json;\n\nconst execution = errorData.execution || {};\nconst workflow = errorData.workflow || {};\nconst lastNode = execution.lastNodeExecuted || 'Unknown';\n\nlet errorMessage = 'Unknown error';\ntry {\n  const runData = execution.error?.message || '';\n  if (runData) {\n    errorMessage = runData;\n  } else if (execution.error) {\n    errorMessage = JSON.stringify(execution.error).substring(0, 500);\n  }\n} catch (e) {\n  errorMessage = 'Error parsing failed';\n}\n\nreturn [{\n  json: {\n    source_workflow: workflow.name || 'Unknown',\n    source_node: lastNode,\n    error_message: errorMessage,\n    error_type: 'workflow_error',\n    call_id: null,\n    severity: null,\n    retry_eligible: true,\n    retry_count: 0,\n    original_payload: {}\n  }\n}];"
+        "jsCode": "const errorData = $input.first().json;\n\nconst execution = errorData.execution || {};\nconst workflow = errorData.workflow || {};\nconst lastNode = execution.lastNodeExecuted || 'Unknown';\n\nlet errorMessage = 'Unknown error';\ntry {\n  const runData = execution.error?.message || '';\n  if (runData) {\n    errorMessage = runData;\n  } else if (execution.error) {\n    errorMessage = JSON.stringify(execution.error).substring(0, 500);\n  }\n} catch (e) {\n  errorMessage = 'Error parsing failed';\n}\n\nreturn [{\n  json: {\n    source_workflow: workflow.name || 'Unknown',\n    source_node: lastNode,\n    error_message: errorMessage,\n    error_type: 'workflow_error',\n    call_id: null,\n    severity: null,\n    retry_eligible: false,\n    retry_count: 3,\n    original_payload: {}\n  }\n}];"
       },
       "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
       "name": "Normalize Error",
